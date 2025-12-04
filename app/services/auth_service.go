@@ -3,6 +3,7 @@ package services
 import (
 	"github.com/gofiber/fiber/v2"
 	"uas/app/repositories"
+	"uas/utils"
 )
 
 type AuthService struct {
@@ -29,12 +30,43 @@ func (s *AuthService) Login(c *fiber.Ctx) error {
 		return c.Status(401).JSON(fiber.Map{"error": "user not found"})
 	}
 
-	if req.Password != user.PasswordHash {
+	if !user.IsActive {
+		return c.Status(403).JSON(fiber.Map{"error": "user is inactive"})
+	}
+
+	if !utils.CheckPassword(req.Password, user.PasswordHash) {
 		return c.Status(401).JSON(fiber.Map{"error": "wrong password"})
 	}
 
+	// Load Role Name
+	roleName, _ := s.Repo.GetRoleName(user.RoleID)
+
+	// Load Permissions
+	permissions, _ := s.Repo.GetPermissions(user.RoleID)
+
+	// Generate JWT
+	token, err := utils.GenerateToken(*user, roleName, permissions)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "token generation failed"})
+	}
+
+	refresh, err := utils.GenerateRefreshToken(user.ID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "refresh token failed"})
+	}
+
 	return c.JSON(fiber.Map{
-		"message": "login success",
-		"user":    user,
+		"status": "success",
+		"data": fiber.Map{
+			"token":        token,
+			"refreshToken": refresh,
+			"user": fiber.Map{
+				"id":          user.ID,
+				"username":    user.Username,
+				"fullName":    user.FullName,
+				"role":        roleName,
+				"permissions": permissions,
+			},
+		},
 	})
 }
