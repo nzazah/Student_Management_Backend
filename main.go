@@ -13,26 +13,19 @@ import (
 )
 
 func main() {
-	// Load .env
 	config.LoadEnv()
 
-	// Connect to Postgres
-	database.ConnectPostgres()
+	db := databases.ConnectPostgres()
 
-	// Init Fiber
 	app := fiber.New()
 
-	// Repository & Service
-	userRepo := repositories.NewUserRepository(database.DB)
+	userRepo := repositories.NewUserRepository(db)
 	authService := services.NewAuthService(userRepo)
 
-	// Setup routes
 	routes.Setup(app, authService)
 
-	// Informasi server
 	log.Println("Server running at http://localhost:3000")
 
-	// Start server
 	if err := app.Listen(":3000"); err != nil {
 		log.Fatal(err)
 	}

@@ -7,93 +7,75 @@ import (
 
 type IUserRepository interface {
 	FindByUsername(username string) (*models.User, error)
+	FindByID(userID string) (*models.User, error)
 	GetRoleName(roleID string) (string, error)
-	GetPermissions(roleID string) ([]string, error)
 }
 
 type UserRepository struct {
 	DB *sql.DB
 }
 
-// Factory untuk membuat repository
 func NewUserRepository(db *sql.DB) IUserRepository {
 	return &UserRepository{DB: db}
 }
 
-// -----------------------------------------------------------------------------
-// FIND USER
-// -----------------------------------------------------------------------------
 func (r *UserRepository) FindByUsername(username string) (*models.User, error) {
-	var user models.User
-
 	query := `
         SELECT id, username, email, password_hash, full_name, role_id, is_active
         FROM users
         WHERE username = $1 OR email = $1
         LIMIT 1
     `
+	row := r.DB.QueryRow(query, username)
 
-	err := r.DB.QueryRow(query, username).Scan(
-		&user.ID,
-		&user.Username,
-		&user.Email,
-		&user.PasswordHash,
-		&user.FullName,
-		&user.RoleID,
-		&user.IsActive,
+	var u models.User
+	err := row.Scan(
+		&u.ID,
+		&u.Username,
+		&u.Email,
+		&u.PasswordHash,
+		&u.FullName,
+		&u.RoleID,
+		&u.IsActive,
 	)
-
 	if err != nil {
 		return nil, err
 	}
 
-	return &user, nil
+	return &u, nil
 }
 
-// -----------------------------------------------------------------------------
-// GET ROLE NAME
-// -----------------------------------------------------------------------------
-func (r *UserRepository) GetRoleName(roleID string) (string, error) {
-	var roleName string
-
+func (r *UserRepository) FindByID(id string) (*models.User, error) {
 	query := `
-        SELECT name
-        FROM roles
+        SELECT id, username, email, password_hash, full_name, role_id, is_active
+        FROM users
         WHERE id = $1
+        LIMIT 1
     `
+	row := r.DB.QueryRow(query, id)
 
-	err := r.DB.QueryRow(query, roleID).Scan(&roleName)
-	if err != nil {
-		return "", err
-	}
-
-	return roleName, nil
-}
-
-// -----------------------------------------------------------------------------
-// GET PERMISSIONS BY ROLE
-// -----------------------------------------------------------------------------
-func (r *UserRepository) GetPermissions(roleID string) ([]string, error) {
-	query := `
-        SELECT p.name
-        FROM role_permissions rp
-        JOIN permissions p ON p.id = rp.permission_id
-        WHERE rp.role_id = $1
-    `
-
-	rows, err := r.DB.Query(query, roleID)
+	var u models.User
+	err := row.Scan(
+		&u.ID,
+		&u.Username,
+		&u.Email,
+		&u.PasswordHash,
+		&u.FullName,
+		&u.RoleID,
+		&u.IsActive,
+	)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var perms []string
-	for rows.Next() {
-		var perm string
-		if err := rows.Scan(&perm); err == nil {
-			perms = append(perms, perm)
-		}
-	}
+	return &u, nil
+}
 
-	return perms, nil
+func (r *UserRepository) GetRoleName(roleID string) (string, error) {
+	query := `SELECT name FROM roles WHERE id = $1`
+	row := r.DB.QueryRow(query, roleID)
+
+	var roleName string
+	err := row.Scan(&roleName)
+	return roleName, err
 }

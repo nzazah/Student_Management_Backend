@@ -7,16 +7,14 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtSecret = []byte("super-secret-key-should-be-long")
-var refreshSecret = []byte("super-refresh-token-secret")
+var AccessSecret = []byte("ACCESS_SECRET_KEY")
+var RefreshSecret = []byte("REFRESH_SECRET_KEY")
 
-func GenerateToken(user models.User, role string, permissions []string) (string, error) {
-
+func GenerateAccessToken(user models.User, role string) (string, error) {
 	claims := models.JWTClaims{
-		UserID:      user.ID,
-		Username:    user.Username,
-		Role:        role,
-		Permissions: permissions,
+		UserID:   user.ID,
+		Username: user.Username,
+		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(2 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -24,15 +22,16 @@ func GenerateToken(user models.User, role string, permissions []string) (string,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
+	return token.SignedString(AccessSecret)
 }
 
 func GenerateRefreshToken(userID string) (string, error) {
 	claims := jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		Subject:   userID,
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(refreshSecret)
+
+	tkn := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return tkn.SignedString(RefreshSecret)
 }

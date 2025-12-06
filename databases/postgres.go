@@ -1,4 +1,4 @@
-package database
+package databases
 
 import (
 	"database/sql"
@@ -11,7 +11,7 @@ import (
 
 var DB *sql.DB
 
-func ConnectPostgres() {
+func ConnectPostgres() *sql.DB {
 	connStr := fmt.Sprintf(
 		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
 		os.Getenv("POSTGRES_HOST"),
@@ -33,4 +33,5 @@ func ConnectPostgres() {
 
 	DB = db
 	fmt.Println("PostgreSQL connected.")
+	return db
 }

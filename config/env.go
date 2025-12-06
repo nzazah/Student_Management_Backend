@@ -2,7 +2,6 @@ package config
 
 import (
 	"log"
-	"os"
 
 	"github.com/joho/godotenv"
 )
@@ -10,7 +9,6 @@ import (
 func LoadEnv() {
 	err := godotenv.Load()
 	if err != nil {
-		log.Println("⚠️  .env file not found, using environment variables")
+		log.Println("Warning: .env file not found, using system environment variables")
 	}
-	os.Setenv("TZ", "Asia/Jakarta")
 }
