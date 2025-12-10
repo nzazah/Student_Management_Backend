@@ -32,7 +32,8 @@ func main() {
 	refreshRepo,
 	)
 
-	routes.Setup(app, authService)
+	routes.Setup(app, authService, userRepo)
+
 
 	log.Println("Server running at http://localhost:3000")
 

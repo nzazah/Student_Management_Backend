@@ -25,6 +25,24 @@ func GenerateAccessToken(user models.User, role string) (string, error) {
 	return token.SignedString(AccessSecret)
 }
 
+func GenerateAccessTokenWithPermissions(user models.User, role string, permissions []string) (string, error) {
+	claims := models.JWTClaims{
+		UserID:      user.ID,
+		Username:    user.Username,
+		Role:        role,
+		Permissions: permissions,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(2 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   user.ID,
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(AccessSecret)
+}
+
+
 func GenerateRefreshToken(userID string) (string, error) {
 	claims := jwt.RegisteredClaims{
 		Subject:   userID,
