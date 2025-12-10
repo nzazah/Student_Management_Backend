@@ -23,15 +23,13 @@ func ConnectPostgres() *sql.DB {
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatal("Failed to connect to PostgreSQL:", err)
+		log.Fatal("Failed to connect:", err)
 	}
 
-	// test connection
 	if err = db.Ping(); err != nil {
 		log.Fatal("PostgreSQL not responding:", err)
 	}
 
-	DB = db
 	fmt.Println("PostgreSQL connected.")
 	return db
 }

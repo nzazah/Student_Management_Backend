@@ -20,7 +20,17 @@ func main() {
 	app := fiber.New()
 
 	userRepo := repositories.NewUserRepository(db)
-	authService := services.NewAuthService(userRepo)
+	studentRepo := repositories.NewStudentRepository(db)
+	lecturerRepo := repositories.NewLecturerRepository(db)
+	refreshRepo := repositories.NewRefreshRepository(db)
+
+
+	authService := services.NewAuthService(
+	userRepo,
+	studentRepo,
+	lecturerRepo,
+	refreshRepo,
+	)
 
 	routes.Setup(app, authService)
 
