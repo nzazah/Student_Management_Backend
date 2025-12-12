@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"log"
+	"os"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -15,25 +17,49 @@ import (
 func main() {
 	config.LoadEnv()
 
-	db := databases.ConnectPostgres()
+	// CONNECT POSTGRES
+	pg, err := databases.ConnectPostgres()
+	if err != nil {
+		log.Fatal("Failed to connect PostgreSQL:", err)
+	}
+	defer pg.Close()
+
+	// CONNECT MONGODB
+	mongoUri := os.Getenv("MONGO_URI")
+	mongo, err := databases.ConnectMongo(mongoUri)
+	if err != nil {
+		log.Fatal("Failed to connect MongoDB:", err)
+	}
+	defer mongo.Disconnect(context.Background())
 
 	app := fiber.New()
 
-	userRepo := repositories.NewUserRepository(db)
-	studentRepo := repositories.NewStudentRepository(db)
-	lecturerRepo := repositories.NewLecturerRepository(db)
-	refreshRepo := repositories.NewRefreshRepository(db)
+	// ============= REPOSITORIES =============
 
+	userRepo := repositories.NewUserRepository(pg)
+	studentRepo := repositories.NewStudentRepository(pg)
+	lecturerRepo := repositories.NewLecturerRepository(pg)
+	refreshRepo := repositories.NewRefreshRepository(pg)
+
+	achievementMongoRepo := repositories.NewAchievementMongoRepository(mongo)
+achievementRefRepo := repositories.NewAchievementReferenceRepo(pg)
+
+	// ============= SERVICES =============
 
 	authService := services.NewAuthService(
-	userRepo,
-	studentRepo,
-	lecturerRepo,
-	refreshRepo,
+		userRepo,
+		studentRepo,
+		lecturerRepo,
+		refreshRepo,
 	)
 
-	routes.Setup(app, authService, userRepo)
+	achievementService := services.NewAchievementService(
+	achievementMongoRepo,
+	achievementRefRepo,
+	studentRepo,
+	)
 
+	routes.Setup(app, authService, userRepo, achievementService)
 
 	log.Println("Server running at http://localhost:3000")
 

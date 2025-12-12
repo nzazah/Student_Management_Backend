@@ -7,7 +7,7 @@ import (
 	"uas/middleware"
 )
 
-func Setup(app *fiber.App, auth *services.AuthService, userRepo repositories.IUserRepository) {
+func Setup(app *fiber.App, auth *services.AuthService, userRepo repositories.IUserRepository, achievementService services.IAchievementService,) {
 	api := app.Group("/api/v1")
 
 	authRoute := api.Group("/auth")
@@ -17,7 +17,21 @@ func Setup(app *fiber.App, auth *services.AuthService, userRepo repositories.IUs
 	authRoute.Get("/profile", middleware.JWTProtected(), auth.Profile)
 
 	ach := api.Group("/achievements")
-	ach.Post("/", middleware.JWTProtected(), middleware.RequirePermission("achievement:create", userRepo))
-	ach.Put("/:id", middleware.JWTProtected(), middleware.RequirePermission("achievement:update", userRepo))
-	ach.Post("/:id/verify", middleware.JWTProtected(), middleware.RequirePermission("achievement:verify", userRepo))
-}
+	ach.Post("/",
+		middleware.JWTProtected(),
+		middleware.RequirePermission("achievement:create", userRepo),
+		achievementService.Create,
+	)
+
+	ach.Post("/:id/submit",
+		middleware.JWTProtected(),
+		middleware.RequirePermission("achievement:submit", userRepo),
+		achievementService.Submit,
+	)
+
+	ach.Delete("/:id",
+		middleware.JWTProtected(),
+		middleware.RequirePermission("achievement:delete", userRepo),
+		achievementService.Delete,
+	)
+	}
