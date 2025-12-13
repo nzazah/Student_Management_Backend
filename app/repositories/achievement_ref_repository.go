@@ -15,6 +15,7 @@ type IAchievementReferenceRepo interface {
     GetByMongoID(mongoID string) (*models.AchievementReference, error)
     GetByStudentID(studentID string) ([]*models.AchievementReference, error)
     GetByStudentIDs(studentIDs []string) ([]*models.AchievementReference, error)
+    GetAll() ([]*models.AchievementReference, error)
 }
 
 type AchievementReferenceRepo struct {
@@ -161,5 +162,37 @@ func (r *AchievementReferenceRepo) GetByStudentIDs(studentIDs []string) ([]*mode
 		refs = append(refs, ref)
 	}
 
+	return refs, nil
+}
+
+func (r *AchievementReferenceRepo) GetAll() ([]*models.AchievementReference, error) {
+	rows, err := r.DB.Query(`
+		SELECT id, student_id, mongo_achievement_id, status,
+		       submitted_at, created_at, updated_at
+		FROM achievement_references
+		WHERE status <> 'deleted'
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var refs []*models.AchievementReference
+	for rows.Next() {
+		ref := &models.AchievementReference{}
+		err := rows.Scan(
+			&ref.ID,
+			&ref.StudentID,
+			&ref.MongoAchievementID,
+			&ref.Status,
+			&ref.SubmittedAt,
+			&ref.CreatedAt,
+			&ref.UpdatedAt,
+		)
+		if err != nil {
+			continue
+		}
+		refs = append(refs, ref)
+	}
 	return refs, nil
 }

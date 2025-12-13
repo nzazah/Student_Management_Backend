@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"uas/app/models"
 	"uas/app/repositories"
-	"go.mongodb.org/mongo-driver/bson"
+	"strconv"
 )
 
 type IAchievementService interface {
@@ -16,7 +16,7 @@ type IAchievementService interface {
 	Submit(c *fiber.Ctx) error
 	Delete(c *fiber.Ctx) error
 	List(c *fiber.Ctx) error 
-	GetByID(c *fiber.Ctx) error 
+	GetByID(c *fiber.Ctx) error
 	Update(c *fiber.Ctx) error 
 }
 
@@ -38,7 +38,6 @@ func NewAchievementService(
         studentRepo: student,
     }
 }
-
 
 //
 // FR-003 — Create Achievement (draft)
@@ -178,6 +177,22 @@ func (s *achievementService) Delete(c *fiber.Ctx) error {
 // GET /api/v1/achievements
 //
 func (s *achievementService) List(c *fiber.Ctx) error {
+
+	// =========================
+	// Pagination
+	// =========================
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	limit, _ := strconv.Atoi(c.Query("limit", "10"))
+
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+
+	offset := (page - 1) * limit
+
 	user := c.Locals("user").(*models.JWTClaims)
 	ctx := context.Background()
 
@@ -220,8 +235,6 @@ func (s *achievementService) List(c *fiber.Ctx) error {
 				"updatedAt":       doc.UpdatedAt,
 			})
 		}
-
-		return c.JSON(results)
 	}
 
 	// =========================
@@ -229,19 +242,12 @@ func (s *achievementService) List(c *fiber.Ctx) error {
 	// =========================
 	if user.Role == "lecturer" {
 
-		// 1️⃣ Ambil mahasiswa bimbingan
 		students, err := s.studentRepo.FindByAdvisorID(user.UserID)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		if len(students) == 0 {
-			return c.JSON(results)
-		}
-
-		// 2️⃣ Ambil semua prestasi mahasiswa bimbingan
 		for _, student := range students {
-
 			refs, err := s.refRepo.GetByStudentID(student.ID)
 			if err != nil {
 				continue
@@ -270,30 +276,22 @@ func (s *achievementService) List(c *fiber.Ctx) error {
 				})
 			}
 		}
-
-		return c.JSON(results)
 	}
 
 	// =========================
-	// ROLE: ADMIN
+	// ROLE: ADMIN (FR-010)
 	// =========================
 	if user.Role == "admin" {
 
-		docs, err := s.mongoRepo.FindAll(ctx, bson.M{})
+		refs, err := s.refRepo.GetAll()
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		for _, doc := range docs {
-
-			ref, _ := s.refRepo.GetByMongoID(doc.ID)
-
-			var status string
-			var submittedAt *time.Time
-
-			if ref != nil {
-				status = ref.Status
-				submittedAt = ref.SubmittedAt
+		for _, ref := range refs {
+			doc, err := s.mongoRepo.FindByID(ctx, ref.MongoAchievementID)
+			if err != nil {
+				continue
 			}
 
 			results = append(results, fiber.Map{
@@ -306,34 +304,30 @@ func (s *achievementService) List(c *fiber.Ctx) error {
 				"attachments":     doc.Attachments,
 				"tags":            doc.Tags,
 				"points":          doc.Points,
-				"status":          status,
-				"submittedAt":     submittedAt,
+				"status":          ref.Status,
+				"submittedAt":     ref.SubmittedAt,
 				"createdAt":       doc.CreatedAt,
 				"updatedAt":       doc.UpdatedAt,
 			})
 		}
-
-		return c.JSON(results)
 	}
 
-	return c.Status(403).JSON(fiber.Map{"error": "role not allowed"})
-}
-
-
-//
-// GET /api/v1/achievements/:id
-//
-func (s *achievementService) GetByID(c *fiber.Ctx) error {
-	id := c.Params("id")
-	ctx := context.Background()
-
-	doc, err := s.mongoRepo.FindByID(ctx, id)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "achievement not found"})
+	// =========================
+	// Pagination FINAL
+	// =========================
+	end := offset + limit
+	if offset > len(results) {
+		results = []fiber.Map{}
+	} else {
+		if end > len(results) {
+			end = len(results)
+		}
+		results = results[offset:end]
 	}
 
-	return c.JSON(doc)
+	return c.JSON(results)
 }
+
 
 //
 // PUT /api/v1/achievements/:id
@@ -368,4 +362,41 @@ func (s *achievementService) Update(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"message": "updated"})
+}
+
+func (s *achievementService) GetByID(c *fiber.Ctx) error {
+	id := c.Params("id")
+	ctx := context.Background()
+
+	// Ambil reference dari PostgreSQL
+	ref, err := s.refRepo.GetByMongoID(id)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{
+			"error": "achievement reference not found",
+		})
+	}
+
+	// Ambil detail dari MongoDB
+	doc, err := s.mongoRepo.FindByID(ctx, id)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{
+			"error": "achievement not found",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"id":              doc.ID,
+		"student_id":      ref.StudentID,
+		"achievementType": doc.AchievementType,
+		"title":           doc.Title,
+		"description":     doc.Description,
+		"details":         doc.Details,
+		"attachments":     doc.Attachments,
+		"tags":            doc.Tags,
+		"points":          doc.Points,
+		"status":          ref.Status,
+		"submittedAt":     ref.SubmittedAt,
+		"createdAt":       doc.CreatedAt,
+		"updatedAt":       doc.UpdatedAt,
+	})
 }
