@@ -181,80 +181,144 @@ func (s *achievementService) List(c *fiber.Ctx) error {
 	user := c.Locals("user").(*models.JWTClaims)
 	ctx := context.Background()
 
+	var results []fiber.Map
+
+	// =========================
+	// ROLE: MAHASISWA
+	// =========================
 	if user.Role == "student" {
-		// Ambil student ID berdasarkan user ID
+
 		student, err := s.studentRepo.FindByUserID(user.UserID)
 		if err != nil {
 			return c.Status(404).JSON(fiber.Map{"error": "student profile not found"})
 		}
 
-		// Ambil semua reference milik student
 		refs, err := s.refRepo.GetByStudentID(student.ID)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		var achievements []fiber.Map
 		for _, ref := range refs {
 			doc, err := s.mongoRepo.FindByID(ctx, ref.MongoAchievementID)
 			if err != nil {
 				continue
 			}
-			achievements = append(achievements, fiber.Map{
-				"id":           doc.ID,
-				"student_id":   user.UserID, // tetap pakai userID yang login
+
+			results = append(results, fiber.Map{
+				"id":              doc.ID,
+				"student_id":      ref.StudentID,
 				"achievementType": doc.AchievementType,
-				"title":        doc.Title,
-				"description":  doc.Description,
-				"details":      doc.Details,
-				"attachments":  doc.Attachments,
-				"tags":         doc.Tags,
-				"points":       doc.Points,
-				"status":       ref.Status,
-				"submittedAt":  ref.SubmittedAt,
-				"createdAt":    doc.CreatedAt,
-				"updatedAt":    doc.UpdatedAt,
+				"title":           doc.Title,
+				"description":     doc.Description,
+				"details":         doc.Details,
+				"attachments":     doc.Attachments,
+				"tags":            doc.Tags,
+				"points":          doc.Points,
+				"status":          ref.Status,
+				"submittedAt":     ref.SubmittedAt,
+				"createdAt":       doc.CreatedAt,
+				"updatedAt":       doc.UpdatedAt,
 			})
 		}
 
-		return c.JSON(achievements)
+		return c.JSON(results)
 	}
 
-	// admin / staff: fetch semua
-	docs, err := s.mongoRepo.FindAll(ctx, bson.M{"deletedAt": nil})
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
+	// =========================
+	// ROLE: DOSEN WALI (FR-006)
+	// =========================
+	if user.Role == "lecturer" {
 
-	// Gabungkan status dari reference untuk admin
-	var results []fiber.Map
-	for _, doc := range docs {
-		ref, _ := s.refRepo.GetByMongoID(doc.ID)
-		status := ""
-		submittedAt := (*time.Time)(nil)
-		if ref != nil {
-			status = ref.Status
-			submittedAt = ref.SubmittedAt
+		// 1️⃣ Ambil mahasiswa bimbingan
+		students, err := s.studentRepo.FindByAdvisorID(user.UserID)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		results = append(results, fiber.Map{
-			"id":            doc.ID,
-			"student_id":    ref.StudentID,
-			"achievementType": doc.AchievementType,
-			"title":         doc.Title,
-			"description":   doc.Description,
-			"details":       doc.Details,
-			"attachments":   doc.Attachments,
-			"tags":          doc.Tags,
-			"points":        doc.Points,
-			"status":        status,
-			"submittedAt":   submittedAt,
-			"createdAt":     doc.CreatedAt,
-			"updatedAt":     doc.UpdatedAt,
-		})
+
+		if len(students) == 0 {
+			return c.JSON(results)
+		}
+
+		// 2️⃣ Ambil semua prestasi mahasiswa bimbingan
+		for _, student := range students {
+
+			refs, err := s.refRepo.GetByStudentID(student.ID)
+			if err != nil {
+				continue
+			}
+
+			for _, ref := range refs {
+				doc, err := s.mongoRepo.FindByID(ctx, ref.MongoAchievementID)
+				if err != nil {
+					continue
+				}
+
+				results = append(results, fiber.Map{
+					"id":              doc.ID,
+					"student_id":      student.ID,
+					"achievementType": doc.AchievementType,
+					"title":           doc.Title,
+					"description":     doc.Description,
+					"details":         doc.Details,
+					"attachments":     doc.Attachments,
+					"tags":            doc.Tags,
+					"points":          doc.Points,
+					"status":          ref.Status,
+					"submittedAt":     ref.SubmittedAt,
+					"createdAt":       doc.CreatedAt,
+					"updatedAt":       doc.UpdatedAt,
+				})
+			}
+		}
+
+		return c.JSON(results)
 	}
 
-	return c.JSON(results)
+	// =========================
+	// ROLE: ADMIN
+	// =========================
+	if user.Role == "admin" {
+
+		docs, err := s.mongoRepo.FindAll(ctx, bson.M{})
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		for _, doc := range docs {
+
+			ref, _ := s.refRepo.GetByMongoID(doc.ID)
+
+			var status string
+			var submittedAt *time.Time
+
+			if ref != nil {
+				status = ref.Status
+				submittedAt = ref.SubmittedAt
+			}
+
+			results = append(results, fiber.Map{
+				"id":              doc.ID,
+				"student_id":      ref.StudentID,
+				"achievementType": doc.AchievementType,
+				"title":           doc.Title,
+				"description":     doc.Description,
+				"details":         doc.Details,
+				"attachments":     doc.Attachments,
+				"tags":            doc.Tags,
+				"points":          doc.Points,
+				"status":          status,
+				"submittedAt":     submittedAt,
+				"createdAt":       doc.CreatedAt,
+				"updatedAt":       doc.UpdatedAt,
+			})
+		}
+
+		return c.JSON(results)
+	}
+
+	return c.Status(403).JSON(fiber.Map{"error": "role not allowed"})
 }
+
 
 //
 // GET /api/v1/achievements/:id

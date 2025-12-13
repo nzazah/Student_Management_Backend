@@ -4,6 +4,7 @@ import (
     "database/sql"
     "time"
     "uas/app/models"
+    "github.com/lib/pq"
 )
 
 type IAchievementReferenceRepo interface {
@@ -13,6 +14,7 @@ type IAchievementReferenceRepo interface {
 	SoftDeleteByMongoID(mongoID string) error
     GetByMongoID(mongoID string) (*models.AchievementReference, error)
     GetByStudentID(studentID string) ([]*models.AchievementReference, error)
+    GetByStudentIDs(studentIDs []string) ([]*models.AchievementReference, error)
 }
 
 type AchievementReferenceRepo struct {
@@ -130,3 +132,34 @@ func (r *AchievementReferenceRepo) GetByMongoID(mongoID string) (*models.Achieve
     return ref, err
 }
 
+func (r *AchievementReferenceRepo) GetByStudentIDs(studentIDs []string) ([]*models.AchievementReference, error) {
+	query := `
+		SELECT id, student_id, mongo_achievement_id, status, created_at, updated_at
+		FROM achievement_references
+		WHERE student_id = ANY($1) AND status <> 'deleted'
+	`
+
+	rows, err := r.DB.Query(query, pq.Array(studentIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var refs []*models.AchievementReference
+	for rows.Next() {
+		ref := &models.AchievementReference{}
+		if err := rows.Scan(
+			&ref.ID,
+			&ref.StudentID,
+			&ref.MongoAchievementID,
+			&ref.Status,
+			&ref.CreatedAt,
+			&ref.UpdatedAt,
+		); err != nil {
+			continue
+		}
+		refs = append(refs, ref)
+	}
+
+	return refs, nil
+}
