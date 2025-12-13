@@ -17,7 +17,9 @@ type IAchievementService interface {
 	Delete(c *fiber.Ctx) error
 	List(c *fiber.Ctx) error 
 	GetByID(c *fiber.Ctx) error
-	Update(c *fiber.Ctx) error 
+	Update(c *fiber.Ctx) error
+	Verify(c *fiber.Ctx) error
+	Reject(c *fiber.Ctx) error 
 }
 
 type achievementService struct {
@@ -399,4 +401,74 @@ func (s *achievementService) GetByID(c *fiber.Ctx) error {
 		"createdAt":       doc.CreatedAt,
 		"updatedAt":       doc.UpdatedAt,
 	})
+}
+
+func (s *achievementService) Verify(c *fiber.Ctx) error {
+    user := c.Locals("user").(*models.JWTClaims)
+    id := c.Params("id")
+
+    // 1️⃣ Ambil reference
+    ref, err := s.refRepo.GetByMongoID(id)
+    if err != nil {
+        return c.Status(404).JSON(fiber.Map{"error": "achievement not found"})
+    }
+
+    // 2️⃣ Validasi status
+    if ref.Status != "submitted" {
+        return c.Status(400).JSON(fiber.Map{
+            "error": "only submitted achievement can be verified",
+        })
+    }
+
+    // 3️⃣ Verify
+    err = s.refRepo.VerifyByMongoID(
+        id,
+        user.UserID,     // verified_by
+        time.Now(),      // verified_at
+    )
+    if err != nil {
+        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+    }
+
+    return c.JSON(fiber.Map{
+        "status": "verified",
+    })
+}
+
+func (s *achievementService) Reject(c *fiber.Ctx) error {
+    id := c.Params("id")
+
+    var payload struct {
+        RejectionNote string `json:"rejection_note"`
+    }
+
+    if err := c.BodyParser(&payload); err != nil {
+        return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+    }
+
+    if payload.RejectionNote == "" {
+        return c.Status(400).JSON(fiber.Map{
+            "error": "rejection_note is required",
+        })
+    }
+
+    ref, err := s.refRepo.GetByMongoID(id)
+    if err != nil {
+        return c.Status(404).JSON(fiber.Map{"error": "achievement not found"})
+    }
+
+    if ref.Status != "submitted" {
+        return c.Status(400).JSON(fiber.Map{
+            "error": "only submitted achievement can be rejected",
+        })
+    }
+
+    err = s.refRepo.RejectByMongoID(id, payload.RejectionNote)
+    if err != nil {
+        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+    }
+
+    return c.JSON(fiber.Map{
+        "status": "rejected",
+    })
 }

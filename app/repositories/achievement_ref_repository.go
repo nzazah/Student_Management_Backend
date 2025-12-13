@@ -16,6 +16,8 @@ type IAchievementReferenceRepo interface {
     GetByStudentID(studentID string) ([]*models.AchievementReference, error)
     GetByStudentIDs(studentIDs []string) ([]*models.AchievementReference, error)
     GetAll() ([]*models.AchievementReference, error)
+	VerifyByMongoID( mongoID string, verifiedBy string, verifiedAt time.Time,) error
+    RejectByMongoID( mongoID string, rejectionNote string,) error
 }
 
 type AchievementReferenceRepo struct {
@@ -195,4 +197,38 @@ func (r *AchievementReferenceRepo) GetAll() ([]*models.AchievementReference, err
 		refs = append(refs, ref)
 	}
 	return refs, nil
+}
+
+func (r *AchievementReferenceRepo) VerifyByMongoID(
+    mongoID string,
+    verifiedBy string,
+    verifiedAt time.Time,
+) error {
+    _, err := r.DB.Exec(`
+        UPDATE achievement_references
+        SET status='verified',
+            verified_by=$2,
+            verified_at=$3,
+            updated_at=NOW()
+        WHERE mongo_achievement_id=$1
+          AND status='submitted'
+    `, mongoID, verifiedBy, verifiedAt)
+
+    return err
+}
+
+func (r *AchievementReferenceRepo) RejectByMongoID(
+    mongoID string,
+    note string,
+) error {
+    _, err := r.DB.Exec(`
+        UPDATE achievement_references
+        SET status='rejected',
+            rejection_note=$2,
+            updated_at=NOW()
+        WHERE mongo_achievement_id=$1
+          AND status='submitted'
+    `, mongoID, note)
+
+    return err
 }

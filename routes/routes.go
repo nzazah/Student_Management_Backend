@@ -23,4 +23,7 @@ func Setup(app *fiber.App, auth *services.AuthService, userRepo repositories.IUs
 	ach.Put("/:id", middleware.RequirePermission("achievement:update", userRepo), achievementService.Update)
 	ach.Delete("/:id", middleware.RequirePermission("achievement:delete", userRepo), achievementService.Delete)
 	ach.Post("/:id/submit", middleware.RequirePermission("achievement:submit", userRepo), achievementService.Submit)
+	ach.Post("/:id/verify", middleware.JWTProtected(), middleware.RequirePermission("achievement:verify", userRepo), achievementService.Verify,)
+	ach.Post("/:id/reject", middleware.JWTProtected(), middleware.RequirePermission("achievement:reject", userRepo), achievementService.Reject,)
+
 }
