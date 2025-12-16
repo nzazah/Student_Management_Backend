@@ -6,6 +6,8 @@ import (
 )
 
 type ILecturerRepository interface {
+	FindAll() ([]models.Lecturer, error)
+	FindByID(id string) (*models.Lecturer, error)
 	FindByUserID(userID string) (*models.Lecturer, error)
 	Create(lecturer *models.Lecturer) error
 	Update(lecturer *models.Lecturer) error
@@ -74,4 +76,62 @@ func (r *LecturerRepository) Update(l *models.Lecturer) error {
 		l.UserID,
 	)
 	return err
+}
+
+func (r *LecturerRepository) FindAll() ([]models.Lecturer, error) {
+	query := `
+		SELECT id, user_id, lecturer_id, department, created_at
+		FROM lecturers
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var lecturers []models.Lecturer
+
+	for rows.Next() {
+		var l models.Lecturer
+		if err := rows.Scan(
+			&l.ID,
+			&l.UserID,
+			&l.LecturerID,
+			&l.Department,
+			&l.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		lecturers = append(lecturers, l)
+	}
+
+	return lecturers, nil
+}
+
+func (r *LecturerRepository) FindByID(id string) (*models.Lecturer, error) {
+	query := `
+		SELECT id, user_id, lecturer_id, department, created_at
+		FROM lecturers
+		WHERE id = $1
+		LIMIT 1
+	`
+
+	row := r.DB.QueryRow(query, id)
+
+	var l models.Lecturer
+	err := row.Scan(
+		&l.ID,
+		&l.UserID,
+		&l.LecturerID,
+		&l.Department,
+		&l.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &l, nil
 }

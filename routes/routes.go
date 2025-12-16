@@ -53,13 +53,20 @@ func Setup(
 	studentService := services.NewStudentService(
 	studentRepo,
 	achievementRefRepo,
-	achievementMongoRepo,
-)
+	achievementMongoRepo,)
 
 	students := api.Group("/students")
 	students.Get("/", middleware.JWTProtected(), middleware.RequirePermission("student:list", userRepo), studentService.GetAll,)
 	students.Get("/:id", middleware.JWTProtected(), middleware.RequirePermission("student:read", userRepo), studentService.GetByID,)
 	students.Get("/:id/achievements", middleware.JWTProtected(), middleware.RequirePermission("student:achievements", userRepo),studentService.GetAchievements,)
 	students.Put("/:id/advisor", middleware.JWTProtected(), middleware.RequirePermission("student:update_advisor", userRepo), studentService.UpdateAdvisor,)
+
+	lecturerService := services.NewLecturerService(
+	lecturerRepo,
+	studentRepo,)
+
+	lecturers := api.Group("/lecturers", middleware.JWTProtected())
+	lecturers.Get("/", middleware.RequirePermission("lecturer:list", userRepo), lecturerService.GetAll,)
+	lecturers.Get("/:id/advisees", middleware.RequirePermission("lecturer:advisees", userRepo), lecturerService.GetAdvisees,)
 
 }
