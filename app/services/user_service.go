@@ -2,7 +2,8 @@ package services
 
 import (
 	"context"
-
+	"time"
+	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -24,7 +25,6 @@ type IUserService interface {
 	UpdateUser(c *fiber.Ctx) error
 	DeleteUser(c *fiber.Ctx) error
 	AssignRole(c *fiber.Ctx) error
-	SetAdvisor(c *fiber.Ctx) error
 }
 
 /*
@@ -36,7 +36,7 @@ SERVICE STRUCT
 type UserService struct {
 	userRepo     repositories.IUserManagementRepository
 	studentRepo  repositories.IStudentRepository
-	lecturerRepo repositories.ILecturerRepository
+    lecturerRepo repositories.ILecturerRepository
 }
 
 /*
@@ -48,12 +48,12 @@ CONSTRUCTOR
 func NewUserService(
 	userRepo repositories.IUserManagementRepository,
 	studentRepo repositories.IStudentRepository,
-	lecturerRepo repositories.ILecturerRepository,
+    lecturerRepo repositories.ILecturerRepository,
 ) IUserService {
 	return &UserService{
 		userRepo:     userRepo,
 		studentRepo: studentRepo,
-		lecturerRepo: lecturerRepo,
+        lecturerRepo: lecturerRepo,
 	}
 }
 
@@ -70,17 +70,25 @@ type CreateUserRequest struct {
 	FullName string `json:"fullName"`
 	RoleID   string `json:"roleId"`
 
-	Student  *models.Student  `json:"student,omitempty"`
-	Lecturer *models.Lecturer `json:"lecturer,omitempty"`
+	Student  *StudentPayload  `json:"student,omitempty"`
+	Lecturer *LecturerPayload `json:"lecturer,omitempty"`
+}
+
+type StudentPayload struct {
+	StudentID    string  `json:"studentId"`
+	ProgramStudy string  `json:"programStudy"`
+	AcademicYear string  `json:"academicYear"`
+	AdvisorID    *string `json:"advisorId,omitempty"`
+}
+
+type LecturerPayload struct {
+	LecturerID string `json:"lecturerId"`
+	Department string `json:"department"`
 }
 
 
 type AssignRoleRequest struct {
 	RoleID string `json:"role_id"`
-}
-
-type SetAdvisorRequest struct {
-	AdvisorID string `json:"advisor_id"`
 }
 
 /*
@@ -109,18 +117,11 @@ func (s *UserService) GetUserByID(c *fiber.Ctx) error {
 		return fiber.NewError(404, "user not found")
 	}
 
-	response := fiber.Map{"user": user}
-
-	if student, err := s.studentRepo.FindByUserID(id); err == nil {
-		response["student"] = student
-	}
-
-	if lecturer, err := s.lecturerRepo.FindByUserID(id); err == nil {
-		response["lecturer"] = lecturer
-	}
-
-	return c.JSON(response)
+	return c.JSON(fiber.Map{
+		"user": user,
+	})
 }
+
 
 /*
 ====================================================
@@ -133,13 +134,13 @@ func (s *UserService) CreateUser(c *fiber.Ctx) error {
 
 	var req CreateUserRequest
 	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(400, "invalid request")
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request")
 	}
 
 	// hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return fiber.NewError(500, "failed to hash password")
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to hash password")
 	}
 
 	user := &models.User{
@@ -150,38 +151,55 @@ func (s *UserService) CreateUser(c *fiber.Ctx) error {
 		FullName:     req.FullName,
 		RoleID:       req.RoleID,
 		IsActive:     true,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 
 	// create user
 	if err := s.userRepo.Create(ctx, user); err != nil {
-		return fiber.NewError(500, err.Error())
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
 
-	// create student profile (optional)
-	if req.Student != nil {
-		req.Student.ID = uuid.NewString()
-		req.Student.UserID = user.ID
+	// === create student profile jika RoleID mahasiswa ===
+	if req.RoleID == "e8c7223b-2905-45c7-b7d0-8b06345dd1d7" && req.Student != nil {
+		student := &models.Student{
+			ID:           uuid.NewString(),
+			UserID:       user.ID,
+			StudentID:    req.Student.StudentID,
+			ProgramStudy: req.Student.ProgramStudy,
+			AcademicYear: req.Student.AcademicYear,
+			AdvisorID:    req.Student.AdvisorID,
+			CreatedAt:    time.Now(),
+		}
 
-		if err := s.studentRepo.Create(req.Student); err != nil {
-			return fiber.NewError(500, "failed to create student profile")
+		if err := s.studentRepo.Create(student); err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "failed to create student profile")
 		}
 	}
 
-	// create lecturer profile (optional)
-	if req.Lecturer != nil {
-		req.Lecturer.ID = uuid.NewString()
-		req.Lecturer.UserID = user.ID
+	// === create lecturer profile jika RoleID dosen ===
+	if req.RoleID == "f09c60fc-abd0-45b2-930d-7be7e9f7599e" && req.Lecturer != nil {
+		lecturer := &models.Lecturer{
+			ID:         uuid.NewString(),
+			UserID:     user.ID,
+			LecturerID: req.Lecturer.LecturerID,
+			Department: req.Lecturer.Department,
+			CreatedAt:  time.Now(),
+		}
 
-		if err := s.lecturerRepo.Create(req.Lecturer); err != nil {
-			return fiber.NewError(500, "failed to create lecturer profile")
+		fmt.Printf("Creating lecturer: %+v\n", lecturer)
+
+		if err := s.lecturerRepo.Create(lecturer); err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "failed to create lecturer profile")
 		}
 	}
 
-	return c.Status(201).JSON(fiber.Map{
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "user created",
 		"user_id": user.ID,
 	})
 }
+
 
 /*
 ====================================================
@@ -256,25 +274,4 @@ func (s *UserService) AssignRole(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"message": "role updated"})
-}
-
-/*
-====================================================
-SET ADVISOR (ADMIN)
-====================================================
-*/
-
-func (s *UserService) SetAdvisor(c *fiber.Ctx) error {
-	studentID := c.Params("id")
-
-	var req SetAdvisorRequest
-	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(400, "invalid request")
-	}
-
-	if err := s.studentRepo.UpdateAdvisor(studentID, req.AdvisorID); err != nil {
-		return fiber.NewError(500, err.Error())
-	}
-
-	return c.JSON(fiber.Map{"message": "advisor assigned"})
 }
