@@ -17,12 +17,8 @@ type IAchievementMongoRepository interface {
 	FindByID(ctx context.Context, id string) (*models.MongoAchievement, error)
 	FindAll(ctx context.Context, filter bson.M) ([]*models.MongoAchievement, error)
 	Update(ctx context.Context, id string, data *models.MongoAchievement) error
-
-	AddAttachment(
-		ctx context.Context,
-		id string,
-		attachment models.AchievementAttachment,
-	) error
+    AddAttachment(ctx context.Context, id string, attachment models.AchievementAttachment) error
+	UpdatePoints(ctx context.Context, id string, points int) error
 }
 
 
@@ -119,5 +115,25 @@ func (r *AchievementMongoRepository) AddAttachment(
 			"$set":  bson.M{"updatedAt": time.Now()},
 		},
 	)
+	return err
+}
+
+func (r *AchievementMongoRepository) UpdatePoints(
+	ctx context.Context,
+	id string,
+	points int,
+) error {
+
+	_, err := r.collection.UpdateOne(
+		ctx,
+		bson.M{"_id": id},
+		bson.M{
+			"$set": bson.M{
+				"points":    points,
+				"updatedAt": time.Now(),
+			},
+		},
+	)
+
 	return err
 }

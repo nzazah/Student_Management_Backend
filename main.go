@@ -32,6 +32,9 @@ func main() {
 	}
 	defer mongo.Disconnect(context.Background())
 
+	mongoDB := mongo.Database("uas")
+	mongoRepo := repositories.NewAchievementMongoReportRepository(mongoDB)
+
 	app := fiber.New()
 
 	// ============= REPOSITORIES =============
@@ -40,9 +43,13 @@ func main() {
 	studentRepo := repositories.NewStudentRepository(pg)
 	lecturerRepo := repositories.NewLecturerRepository(pg)
 	refreshRepo := repositories.NewRefreshRepository(pg)
+	reportRepo := repositories.NewReportRepository(pg)
+
 
 	achievementMongoRepo := repositories.NewAchievementMongoRepository(mongo)
 	achievementRefRepo := repositories.NewAchievementReferenceRepo(pg)
+
+
 
 	// ============= SERVICES =============
 
@@ -60,6 +67,8 @@ func main() {
 		lecturerRepo,
 	)
 
+	reportService := services.NewReportService(reportRepo, mongoRepo)
+
 	routes.Setup(
 		app,
 		authService,
@@ -70,6 +79,7 @@ func main() {
 		achievementService,
 		achievementRefRepo,
 		achievementMongoRepo,
+		reportService,
 	)
 
 	log.Println("Server running at http://localhost:3000")

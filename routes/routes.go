@@ -17,6 +17,7 @@ func Setup(
 	achievementService services.IAchievementService,
 	achievementRefRepo repositories.IAchievementReferenceRepo,
 	achievementMongoRepo repositories.IAchievementMongoRepository,
+	reportService *services.ReportService,
 ) {
 	api := app.Group("/api/v1")
 	
@@ -70,5 +71,9 @@ func Setup(
 	lecturers := api.Group("/lecturers", middleware.JWTProtected())
 	lecturers.Get("/", middleware.RequirePermission("lecturer:list", userRepo), lecturerService.GetAll,)
 	lecturers.Get("/:id/advisees", middleware.RequirePermission("lecturer:advisees", userRepo), lecturerService.GetAdvisees,)
+
+	reports := api.Group("/reports")
+	reports.Get("/statistics", middleware.JWTProtected(), middleware.RequirePermission("report:view", userRepo), reportService.Statistics,)
+	reports.Get("/student/:id", middleware.JWTProtected(), middleware.RequirePermission("report:view", userRepo), reportService.StudentReport,)
 
 }

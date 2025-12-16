@@ -71,7 +71,7 @@ func (s *achievementService) Create(c *fiber.Ctx) error {
 
 	// Inject data sistem
 	payload.StudentID = student.ID
-	payload.Attachments = []models.AchievementAttachment{} // kosong
+	payload.Attachments = []models.AchievementAttachment{}
 	payload.Points = 0
 	payload.CreatedAt = now
 	payload.UpdatedAt = now
@@ -465,34 +465,54 @@ func (s *achievementService) GetByID(c *fiber.Ctx) error {
 }
 
 func (s *achievementService) Verify(c *fiber.Ctx) error {
+    ctx := context.Background()
     user := c.Locals("user").(*models.JWTClaims)
     id := c.Params("id")
 
-    // 1️⃣ Ambil reference
+    var payload struct {
+        Points int `json:"points"`
+    }
+
+    if err := c.BodyParser(&payload); err != nil {
+        return c.Status(400).JSON(fiber.Map{
+            "error": "invalid request body",
+        })
+    }
+
+    if payload.Points <= 0 {
+        return c.Status(400).JSON(fiber.Map{
+            "error": "points must be greater than 0",
+        })
+    }
+
     ref, err := s.refRepo.GetByMongoID(id)
     if err != nil {
         return c.Status(404).JSON(fiber.Map{"error": "achievement not found"})
     }
 
-    // 2️⃣ Validasi status
     if ref.Status != "submitted" {
         return c.Status(400).JSON(fiber.Map{
             "error": "only submitted achievement can be verified",
         })
     }
 
-    // 3️⃣ Verify
-    err = s.refRepo.VerifyByMongoID(
+    // 1️⃣ Update points di MongoDB
+    if err := s.mongoRepo.UpdatePoints(ctx, id, payload.Points); err != nil {
+        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+    }
+
+    // 2️⃣ Update status di PostgreSQL
+    if err := s.refRepo.VerifyByMongoID(
         id,
-        user.UserID,     // verified_by
-        time.Now(),      // verified_at
-    )
-    if err != nil {
+        user.UserID,
+        time.Now(),
+    ); err != nil {
         return c.Status(500).JSON(fiber.Map{"error": err.Error()})
     }
 
     return c.JSON(fiber.Map{
         "status": "verified",
+        "points": payload.Points,
     })
 }
 
