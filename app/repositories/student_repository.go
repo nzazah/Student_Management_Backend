@@ -10,6 +10,9 @@ type IStudentRepository interface {
 	FindByAdvisorID(advisorID string) ([]*models.Student, error)
 	Create(student *models.Student) error
 	UpdateAdvisor(studentID string, advisorID string) error
+	FindAll() ([]*models.Student, error)
+	FindByID(studentID string) (*models.Student, error)
+	FindAchievementsByStudentID(studentID string) ([]map[string]any, error)
 }
 
 type StudentRepository struct {
@@ -112,4 +115,88 @@ func (r *StudentRepository) UpdateAdvisor(studentID string, advisorID string) er
 	`
 	_, err := r.DB.Exec(query, advisorID, studentID)
 	return err
+}
+
+func (r *StudentRepository) FindAll() ([]*models.Student, error) {
+	rows, err := r.DB.Query(`
+		SELECT id, user_id, student_id, program_study, academic_year, advisor_id, created_at
+		FROM students
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var students []*models.Student
+	for rows.Next() {
+		var s models.Student
+		if err := rows.Scan(
+			&s.ID,
+			&s.UserID,
+			&s.StudentID,
+			&s.ProgramStudy,
+			&s.AcademicYear,
+			&s.AdvisorID,
+			&s.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		students = append(students, &s)
+	}
+	return students, nil
+}
+
+func (r *StudentRepository) FindByID(studentID string) (*models.Student, error) {
+	var s models.Student
+	err := r.DB.QueryRow(`
+		SELECT id, user_id, student_id, program_study, academic_year, advisor_id, created_at
+		FROM students
+		WHERE id = $1
+	`, studentID).Scan(
+		&s.ID,
+		&s.UserID,
+		&s.StudentID,
+		&s.ProgramStudy,
+		&s.AcademicYear,
+		&s.AdvisorID,
+		&s.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+func (r *StudentRepository) FindAchievementsByStudentID(studentID string) ([]map[string]any, error) {
+	rows, err := r.DB.Query(`
+		SELECT id, title, description, status, created_at
+		FROM achievements
+		WHERE student_id = $1
+	`, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var achievements []map[string]any
+	for rows.Next() {
+		var (
+			id, title, description, status string
+			createdAt                     any
+		)
+
+		if err := rows.Scan(&id, &title, &description, &status, &createdAt); err != nil {
+			return nil, err
+		}
+
+		achievements = append(achievements, map[string]any{
+			"id":          id,
+			"title":       title,
+			"description": description,
+			"status":      status,
+			"created_at":  createdAt,
+		})
+	}
+	return achievements, nil
 }

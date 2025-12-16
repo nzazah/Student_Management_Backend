@@ -48,4 +48,12 @@ func Setup(
 	users.Delete("/:id", userService.DeleteUser)
 	users.Put("/:id/role", userService.AssignRole)
 
+	studentService := services.NewStudentService(studentRepo)
+
+	students := api.Group("/students")
+	students.Get("/", middleware.JWTProtected(), middleware.RequirePermission("student:list", userRepo), studentService.GetAll,)
+	students.Get("/:id", middleware.JWTProtected(), middleware.RequirePermission("student:read", userRepo), studentService.GetByID,)
+	students.Get("/:id/achievements", middleware.JWTProtected(), middleware.RequirePermission("student:achievements", userRepo),studentService.GetAchievements,)
+	students.Put("/:id/advisor", middleware.JWTProtected(), middleware.RequirePermission("student:update_advisor", userRepo), studentService.UpdateAdvisor,)
+
 }
