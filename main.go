@@ -60,7 +60,15 @@ func main() {
 		lecturerRepo,
 	)
 
-	routes.Setup(app, authService, userRepo, achievementService)
+	routes.Setup(
+		app,
+		authService,
+		userRepo,
+		userRepo,
+		studentRepo,
+		lecturerRepo,
+		achievementService,
+	)
 
 	log.Println("Server running at http://localhost:3000")
 

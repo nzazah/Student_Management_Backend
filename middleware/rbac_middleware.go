@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"context"
 	"strings"
+
 	"uas/app/models"
 	"uas/app/repositories"
 
@@ -21,9 +23,11 @@ func RequirePermission(required string, userRepo repositories.IUserRepository) f
 			return c.Status(401).JSON(fiber.Map{"error": "invalid auth context"})
 		}
 
-		// Jika token tidak punya permissions, load dari DB
+		ctx := context.Background()
+
+		// Jika token tidak membawa permissions → load dari DB
 		if len(claims.Permissions) == 0 {
-			perms, err := userRepo.GetPermissionsByUserID(claims.UserID)
+			perms, err := userRepo.GetPermissionsByUserID(ctx, claims.UserID)
 			if err != nil {
 				return c.Status(500).JSON(fiber.Map{"error": "failed to load permissions"})
 			}
@@ -31,13 +35,15 @@ func RequirePermission(required string, userRepo repositories.IUserRepository) f
 			c.Locals("user", claims)
 		}
 
-		// Cek apakah permission sesuai
+		// Cek permission
 		for _, p := range claims.Permissions {
 			if strings.EqualFold(p, required) {
 				return c.Next()
 			}
 		}
 
-		return c.Status(403).JSON(fiber.Map{"error": "forbidden: insufficient permissions"})
+		return c.Status(403).JSON(fiber.Map{
+			"error": "forbidden: insufficient permissions",
+		})
 	}
 }

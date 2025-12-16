@@ -8,7 +8,8 @@ import (
 type IStudentRepository interface {
 	FindByUserID(userID string) (*models.Student, error)
 	FindByAdvisorID(advisorID string) ([]*models.Student, error)
-
+	Create(student *models.Student) error
+	UpdateAdvisor(studentID string, advisorID string) error
 }
 
 type StudentRepository struct {
@@ -80,4 +81,35 @@ func (r *StudentRepository) FindByAdvisorID(advisorID string) ([]*models.Student
 	}
 
 	return students, nil
+}
+
+func (r *StudentRepository) Create(s *models.Student) error {
+	query := `
+		INSERT INTO students (
+			id, user_id, student_id,
+			program_study, academic_year,
+			advisor_id, created_at
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,NOW())
+	`
+	_, err := r.DB.Exec(
+		query,
+		s.ID,
+		s.UserID,
+		s.StudentID,
+		s.ProgramStudy,
+		s.AcademicYear,
+		s.AdvisorID,
+	)
+	return err
+}
+
+func (r *StudentRepository) UpdateAdvisor(studentID string, advisorID string) error {
+	query := `
+	UPDATE students
+	SET advisor_id = $1
+	WHERE id = $2
+	`
+	_, err := r.DB.Exec(query, advisorID, studentID)
+	return err
 }
