@@ -15,6 +15,8 @@ func Setup(
 	studentRepo repositories.IStudentRepository,
 	lecturerRepo repositories.ILecturerRepository,
 	achievementService services.IAchievementService,
+	achievementRefRepo repositories.IAchievementReferenceRepo,
+	achievementMongoRepo repositories.IAchievementMongoRepository,
 ) {
 	api := app.Group("/api/v1")
 	
@@ -48,7 +50,11 @@ func Setup(
 	users.Delete("/:id", userService.DeleteUser)
 	users.Put("/:id/role", userService.AssignRole)
 
-	studentService := services.NewStudentService(studentRepo)
+	studentService := services.NewStudentService(
+	studentRepo,
+	achievementRefRepo,
+	achievementMongoRepo,
+)
 
 	students := api.Group("/students")
 	students.Get("/", middleware.JWTProtected(), middleware.RequirePermission("student:list", userRepo), studentService.GetAll,)

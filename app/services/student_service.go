@@ -2,7 +2,7 @@ package services
 
 import (
 	"errors"
-
+	"context"
 	"github.com/gofiber/fiber/v2"
 	"uas/app/models"
 	"uas/app/repositories"
@@ -10,11 +10,19 @@ import (
 
 type StudentService struct {
 	studentRepo repositories.IStudentRepository
+	achievementRefRepo repositories.IAchievementReferenceRepo
+	mongoAchRepo       repositories.IAchievementMongoRepository
 }
 
-func NewStudentService(studentRepo repositories.IStudentRepository) *StudentService {
+func NewStudentService(
+	studentRepo repositories.IStudentRepository,
+	achievementRefRepo repositories.IAchievementReferenceRepo,
+	mongoAchRepo repositories.IAchievementMongoRepository,
+) *StudentService {
 	return &StudentService{
-		studentRepo: studentRepo,
+		studentRepo:        studentRepo,
+		achievementRefRepo: achievementRefRepo,
+		mongoAchRepo:       mongoAchRepo,
 	}
 }
 
@@ -70,23 +78,58 @@ func (s *StudentService) GetAchievements(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "student not found")
 	}
 
-	// Restrict mahasiswa
+	// Restrict Mahasiswa (hanya boleh lihat miliknya)
 	role := c.Locals("role")
 	userID := c.Locals("user_id")
 
-	if role == "student" && student.UserID != userID {
+	if role == "Mahasiswa" && student.UserID != userID {
 		return fiber.ErrForbidden
 	}
 
-	achievements, err := s.studentRepo.FindAchievementsByStudentID(studentID)
+	// 1️⃣ Ambil reference dari PostgreSQL
+	refs, err := s.achievementRefRepo.GetByStudentID(studentID)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
 
+	ctx := context.Background()
+	var results []fiber.Map
+
+	// 2️⃣ Ambil detail dari MongoDB
+	for _, ref := range refs {
+		mongoAch, err := s.mongoAchRepo.FindByID(ctx, ref.MongoAchievementID)
+		if err != nil {
+			continue // skip kalau data mongo hilang
+		}
+
+		results = append(results, fiber.Map{
+			"id":              ref.ID,
+			"status":          ref.Status,
+			"submitted_at":    ref.SubmittedAt,
+			"verified_at":     ref.VerifiedAt,
+			"verified_by":     ref.VerifiedBy,
+			"rejection_note":  ref.RejectionNote,
+
+			// Mongo data
+			"achievement": fiber.Map{
+				"id":               mongoAch.ID,
+				"achievement_type": mongoAch.AchievementType,
+				"title":            mongoAch.Title,
+				"description":      mongoAch.Description,
+				"details":          mongoAch.Details,
+				"attachments":      mongoAch.Attachments,
+				"tags":             mongoAch.Tags,
+				"points":           mongoAch.Points,
+				"created_at":       mongoAch.CreatedAt,
+			},
+		})
+	}
+
 	return c.JSON(fiber.Map{
-		"data": achievements,
+		"data": results,
 	})
 }
+
 
 /* =========================
    PUT /students/:id/advisor

@@ -68,6 +68,8 @@ func main() {
 		studentRepo,
 		lecturerRepo,
 		achievementService,
+		achievementRefRepo,
+		achievementMongoRepo,
 	)
 
 	log.Println("Server running at http://localhost:3000")
