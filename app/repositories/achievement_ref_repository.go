@@ -18,6 +18,7 @@ type IAchievementReferenceRepo interface {
     GetAll() ([]*models.AchievementReference, error)
 	VerifyByMongoID( mongoID string, verifiedBy string, verifiedAt time.Time,) error
     RejectByMongoID( mongoID string, rejectionNote string,) error
+    GetHistoryByMongoID(mongoID string) ([]*models.AchievementReference, error)
 }
 
 type AchievementReferenceRepo struct {
@@ -231,4 +232,42 @@ func (r *AchievementReferenceRepo) RejectByMongoID(
     `, mongoID, note)
 
     return err
+}
+
+func (r *AchievementReferenceRepo) GetHistoryByMongoID(mongoID string) ([]*models.AchievementReference, error) {
+    rows, err := r.DB.Query(`
+        SELECT id, student_id, mongo_achievement_id, status,
+               submitted_at, verified_at, verified_by, rejection_note,
+               created_at, updated_at
+        FROM achievement_references
+        WHERE mongo_achievement_id=$1
+        ORDER BY created_at ASC
+    `, mongoID)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var history []*models.AchievementReference
+    for rows.Next() {
+        ref := &models.AchievementReference{}
+        err := rows.Scan(
+            &ref.ID,
+            &ref.StudentID,
+            &ref.MongoAchievementID,
+            &ref.Status,
+            &ref.SubmittedAt,
+            &ref.VerifiedAt,
+            &ref.VerifiedBy,
+            &ref.RejectionNote,
+            &ref.CreatedAt,
+            &ref.UpdatedAt,
+        )
+        if err != nil {
+            continue
+        }
+        history = append(history, ref)
+    }
+
+    return history, nil
 }

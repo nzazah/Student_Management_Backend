@@ -21,6 +21,7 @@ type IAchievementService interface {
 	Verify(c *fiber.Ctx) error
 	Reject(c *fiber.Ctx) error 
 	UploadAttachment(c *fiber.Ctx) error
+	History(c *fiber.Ctx) error
 }
 
 type achievementService struct {
@@ -344,7 +345,7 @@ func (s *achievementService) List(c *fiber.Ctx) error {
 	// =========================
 	// ROLE: ADMIN (FR-010)
 	// =========================
-	if user.Role == "admin" {
+	if user.Role == "Admin" {
 
 		refs, err := s.refRepo.GetAll()
 		if err != nil {
@@ -551,5 +552,19 @@ func (s *achievementService) Reject(c *fiber.Ctx) error {
 
     return c.JSON(fiber.Map{
         "status": "rejected",
+    })
+}
+
+func (s *achievementService) History(c *fiber.Ctx) error {
+    mongoID := c.Params("id")
+
+    history, err := s.refRepo.GetHistoryByMongoID(mongoID)
+    if err != nil {
+        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+    }
+
+    return c.JSON(fiber.Map{
+        "achievement_id": mongoID,
+        "history":        history,
     })
 }
