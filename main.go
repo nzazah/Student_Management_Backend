@@ -42,7 +42,7 @@ func main() {
 	refreshRepo := repositories.NewRefreshRepository(pg)
 
 	achievementMongoRepo := repositories.NewAchievementMongoRepository(mongo)
-achievementRefRepo := repositories.NewAchievementReferenceRepo(pg)
+	achievementRefRepo := repositories.NewAchievementReferenceRepo(pg)
 
 	// ============= SERVICES =============
 
@@ -54,9 +54,10 @@ achievementRefRepo := repositories.NewAchievementReferenceRepo(pg)
 	)
 
 	achievementService := services.NewAchievementService(
-	achievementMongoRepo,
-	achievementRefRepo,
-	studentRepo,
+		achievementMongoRepo,
+		achievementRefRepo,
+		studentRepo,
+		lecturerRepo,
 	)
 
 	routes.Setup(app, authService, userRepo, achievementService)

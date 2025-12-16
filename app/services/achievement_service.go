@@ -26,6 +26,7 @@ type achievementService struct {
     mongoRepo   repositories.IAchievementMongoRepository
     refRepo     repositories.IAchievementReferenceRepo
     studentRepo repositories.IStudentRepository
+	lecturerRepo repositories.ILecturerRepository
 }
 
 
@@ -33,11 +34,13 @@ func NewAchievementService(
     mongo repositories.IAchievementMongoRepository,
     ref repositories.IAchievementReferenceRepo,
     student repositories.IStudentRepository,
+	lecturer repositories.ILecturerRepository,
 ) IAchievementService {
     return &achievementService{
         mongoRepo:   mongo,
         refRepo:     ref,
         studentRepo: student,
+		lecturerRepo: lecturer,
     }
 }
 
@@ -203,7 +206,7 @@ func (s *achievementService) List(c *fiber.Ctx) error {
 	// =========================
 	// ROLE: MAHASISWA
 	// =========================
-	if user.Role == "student" {
+	if user.Role == "Mahasiswa" {
 
 		student, err := s.studentRepo.FindByUserID(user.UserID)
 		if err != nil {
@@ -242,43 +245,55 @@ func (s *achievementService) List(c *fiber.Ctx) error {
 	// =========================
 	// ROLE: DOSEN WALI (FR-006)
 	// =========================
-	if user.Role == "lecturer" {
+	if user.Role == "Dosen Wali" {
 
-		students, err := s.studentRepo.FindByAdvisorID(user.UserID)
+	lecturer, err := s.lecturerRepo.FindByUserID(user.UserID)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "lecturer profile not found"})
+	}
+
+	students, err := s.studentRepo.FindByAdvisorID(lecturer.ID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	for _, student := range students {
+
+		refs, err := s.refRepo.GetByStudentID(student.ID)
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			continue
 		}
 
-		for _, student := range students {
-			refs, err := s.refRepo.GetByStudentID(student.ID)
+		for _, ref := range refs {
+
+			// opsional sesuai FR-006
+			if ref.Status != "submitted" {
+				continue
+			}
+
+			doc, err := s.mongoRepo.FindByID(ctx, ref.MongoAchievementID)
 			if err != nil {
 				continue
 			}
 
-			for _, ref := range refs {
-				doc, err := s.mongoRepo.FindByID(ctx, ref.MongoAchievementID)
-				if err != nil {
-					continue
-				}
-
-				results = append(results, fiber.Map{
-					"id":              doc.ID,
-					"student_id":      student.ID,
-					"achievementType": doc.AchievementType,
-					"title":           doc.Title,
-					"description":     doc.Description,
-					"details":         doc.Details,
-					"attachments":     doc.Attachments,
-					"tags":            doc.Tags,
-					"points":          doc.Points,
-					"status":          ref.Status,
-					"submittedAt":     ref.SubmittedAt,
-					"createdAt":       doc.CreatedAt,
-					"updatedAt":       doc.UpdatedAt,
-				})
-			}
+			results = append(results, fiber.Map{
+				"id":              doc.ID,
+				"student_id":      student.ID,
+				"achievementType": doc.AchievementType,
+				"title":           doc.Title,
+				"description":     doc.Description,
+				"details":         doc.Details,
+				"attachments":     doc.Attachments,
+				"tags":            doc.Tags,
+				"points":          doc.Points,
+				"status":          ref.Status,
+				"submittedAt":     ref.SubmittedAt,
+				"createdAt":       doc.CreatedAt,
+				"updatedAt":       doc.UpdatedAt,
+			})
 		}
 	}
+}
 
 	// =========================
 	// ROLE: ADMIN (FR-010)
