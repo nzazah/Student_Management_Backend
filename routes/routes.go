@@ -35,6 +35,8 @@ func Setup(
 	ach.Post("/:id/submit", middleware.RequirePermission("achievement:submit", userRepo), achievementService.Submit)
 	ach.Post("/:id/verify", middleware.JWTProtected(), middleware.RequirePermission("achievement:verify", userRepo), achievementService.Verify,)
 	ach.Post("/:id/reject", middleware.JWTProtected(), middleware.RequirePermission("achievement:reject", userRepo), achievementService.Reject,)
+	ach.Post("/:id/attachments", middleware.JWTProtected(), middleware.RequirePermission("achievement:upload_attachment", userRepo), achievementService.UploadAttachment,)
+
 
 	userService := services.NewUserService(
 		userMgmtRepo,

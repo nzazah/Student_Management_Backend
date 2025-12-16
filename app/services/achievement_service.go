@@ -20,6 +20,7 @@ type IAchievementService interface {
 	Update(c *fiber.Ctx) error
 	Verify(c *fiber.Ctx) error
 	Reject(c *fiber.Ctx) error 
+	UploadAttachment(c *fiber.Ctx) error
 }
 
 type achievementService struct {
@@ -48,46 +49,91 @@ func NewAchievementService(
 // FR-003 — Create Achievement (draft)
 //
 func (s *achievementService) Create(c *fiber.Ctx) error {
-    ctx := context.Background()
-    user := c.Locals("user").(*models.JWTClaims)
+	ctx := context.Background()
+	user := c.Locals("user").(*models.JWTClaims)
 
-    // GET student ID from user_id
-    student, err := s.studentRepo.FindByUserID(user.UserID)
-    if err != nil {
-        return c.Status(404).JSON(fiber.Map{
-            "error": "student profile not found",
-        })
-    }
+	// Ambil student dari user
+	student, err := s.studentRepo.FindByUserID(user.UserID)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{
+			"error": "student profile not found",
+		})
+	}
 
-    var payload models.MongoAchievement
-    if err := c.BodyParser(&payload); err != nil {
-        return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-    }
+	var payload models.MongoAchievement
+	if err := c.BodyParser(&payload); err != nil {
+		return c.Status(400).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
 
-    // Correct student_id
-    payload.StudentID = student.ID
+	now := time.Now()
 
-    mongoID, err := s.mongoRepo.Insert(ctx, &payload)
-    if err != nil {
-        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-    }
+	// Inject data sistem
+	payload.StudentID = student.ID
+	payload.Attachments = []models.AchievementAttachment{} // kosong
+	payload.Points = 0
+	payload.CreatedAt = now
+	payload.UpdatedAt = now
 
-    ref := &models.AchievementReference{
-        ID:                 uuid.New().String(),
-        StudentID:          student.ID,               // FIX HERE
-        MongoAchievementID: mongoID,
-        Status:             "draft",
-        CreatedAt:          time.Now(),
-        UpdatedAt:          time.Now(),
-    }
+	// Insert ke MongoDB
+	mongoID, err := s.mongoRepo.Insert(ctx, &payload)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 
-    if _, err = s.refRepo.Create(ref); err != nil {
-        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-    }
+	// Simpan reference di PostgreSQL
+	ref := &models.AchievementReference{
+		ID:                 uuid.New().String(),
+		StudentID:          student.ID,
+		MongoAchievementID: mongoID,
+		Status:             "draft",
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
 
-    return c.JSON(payload)
+	if _, err := s.refRepo.Create(ref); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	payload.ID = mongoID
+
+	return c.Status(201).JSON(payload)
 }
 
+func (s *achievementService) UploadAttachment(c *fiber.Ctx) error {
+	ctx := context.Background()
+	id := c.Params("id")
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{
+			"error": "file is required",
+		})
+	}
+
+	// contoh simpan file (pseudo)
+	fileURL := "/uploads/" + file.Filename
+
+	attachment := models.AchievementAttachment{
+		FileName:   file.Filename,
+		FileUrl:    fileURL,
+		FileType:   file.Header.Get("Content-Type"),
+		UploadedAt: time.Now(),
+	}
+
+	// Push attachment ke MongoDB
+	if err := s.mongoRepo.AddAttachment(ctx, id, attachment); err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "attachment uploaded",
+		"file":    attachment,
+	})
+}
 
 //
 // FR-004 — Submit Draft (draft → submitted)
