@@ -5,6 +5,7 @@ import (
     "time"
     "uas/app/models"
     "github.com/lib/pq"
+    "fmt"
 )
 
 type IAchievementReferenceRepo interface {
@@ -66,7 +67,6 @@ func (r *AchievementReferenceRepo) GetByID(id string) (*models.AchievementRefere
     return ref, err
 }
 
-// Update status berdasarkan MongoAchievementID
 func (r *AchievementReferenceRepo) UpdateStatusByMongoID(mongoID string, status string, submittedAt *time.Time) error {
     _, err := r.DB.Exec(`
         UPDATE achievement_references
@@ -76,9 +76,8 @@ func (r *AchievementReferenceRepo) UpdateStatusByMongoID(mongoID string, status 
     return err
 }
 
-// SoftDeleteByMongoID melakukan soft delete berdasarkan mongo_achievement_id
 func (r *AchievementReferenceRepo) SoftDeleteByMongoID(mongoID string) error {
-    now := time.Now() // gunakan untuk updated_at jika perlu
+    now := time.Now()
     _, err := r.DB.Exec(`
         UPDATE achievement_references
         SET status='deleted', updated_at=$2
@@ -205,7 +204,13 @@ func (r *AchievementReferenceRepo) VerifyByMongoID(
     verifiedBy string,
     verifiedAt time.Time,
 ) error {
-    _, err := r.DB.Exec(`
+
+    fmt.Println("DEBUG: VerifyByMongoID called")
+    fmt.Println("DEBUG: mongoID =", mongoID)
+    fmt.Println("DEBUG: verifiedBy =", verifiedBy)
+    fmt.Println("DEBUG: verifiedAt =", verifiedAt)
+
+    res, err := r.DB.Exec(`
         UPDATE achievement_references
         SET status='verified',
             verified_by=$2,
@@ -215,7 +220,20 @@ func (r *AchievementReferenceRepo) VerifyByMongoID(
           AND status='submitted'
     `, mongoID, verifiedBy, verifiedAt)
 
-    return err
+    if err != nil {
+        fmt.Println("DEBUG: update error =", err)
+        return err
+    }
+
+    rowsAffected, _ := res.RowsAffected()
+    fmt.Println("DEBUG: rows affected =", rowsAffected)
+
+    if rowsAffected == 0 {
+        return fmt.Errorf("no rows updated: cek mongoID atau status")
+    }
+
+    fmt.Println("DEBUG: update successful")
+    return nil
 }
 
 func (r *AchievementReferenceRepo) RejectByMongoID(

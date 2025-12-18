@@ -2,569 +2,487 @@ package services
 
 import (
 	"context"
+	"strconv"
 	"time"
-
+	"strings"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+
 	"uas/app/models"
 	"uas/app/repositories"
-	"strconv"
 )
 
-type IAchievementService interface {
-	Create(c *fiber.Ctx) error
-	Submit(c *fiber.Ctx) error
-	Delete(c *fiber.Ctx) error
-	List(c *fiber.Ctx) error 
-	GetByID(c *fiber.Ctx) error
-	Update(c *fiber.Ctx) error
-	Verify(c *fiber.Ctx) error
-	Reject(c *fiber.Ctx) error 
-	UploadAttachment(c *fiber.Ctx) error
-	History(c *fiber.Ctx) error
+type AchievementService struct {
+	MongoRepo    repositories.IAchievementMongoRepository
+	RefRepo      repositories.IAchievementReferenceRepo
+	StudentRepo  repositories.IStudentRepository
+	LecturerRepo repositories.ILecturerRepository
 }
-
-type achievementService struct {
-    mongoRepo   repositories.IAchievementMongoRepository
-    refRepo     repositories.IAchievementReferenceRepo
-    studentRepo repositories.IStudentRepository
-	lecturerRepo repositories.ILecturerRepository
-}
-
 
 func NewAchievementService(
-    mongo repositories.IAchievementMongoRepository,
-    ref repositories.IAchievementReferenceRepo,
-    student repositories.IStudentRepository,
+	mongo repositories.IAchievementMongoRepository,
+	ref repositories.IAchievementReferenceRepo,
+	student repositories.IStudentRepository,
 	lecturer repositories.ILecturerRepository,
-) IAchievementService {
-    return &achievementService{
-        mongoRepo:   mongo,
-        refRepo:     ref,
-        studentRepo: student,
-		lecturerRepo: lecturer,
-    }
+) *AchievementService {
+	return &AchievementService{
+		MongoRepo:    mongo,
+		RefRepo:      ref,
+		StudentRepo:  student,
+		LecturerRepo: lecturer,
+	}
 }
 
-//
-// FR-003 — Create Achievement (draft)
-//
-func (s *achievementService) Create(c *fiber.Ctx) error {
-	ctx := context.Background()
-	user := c.Locals("user").(*models.JWTClaims)
+// CreateAchievement godoc
+// @Summary Create new achievement
+// @Description Mahasiswa menambahkan prestasi baru
+// @Tags Achievements
+// @Accept json
+// @Produce json
+// @Param achievement body models.MongoAchievement true "Achievement Data"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /achievements [post]
+func (s *AchievementService) CreateAchievement() fiber.Handler {
+	return func(c *fiber.Ctx) error {
 
-	// Ambil student dari user
-	student, err := s.studentRepo.FindByUserID(user.UserID)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{
-			"error": "student profile not found",
-		})
-	}
+		user := c.Locals("user").(*models.JWTClaims)
 
-	var payload models.MongoAchievement
-	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(400).JSON(fiber.Map{
-			"error": err.Error(),
-		})
-	}
-
-	now := time.Now()
-
-	// Inject data sistem
-	payload.StudentID = student.ID
-	payload.Attachments = []models.AchievementAttachment{}
-	payload.Points = 0
-	payload.CreatedAt = now
-	payload.UpdatedAt = now
-
-	// Insert ke MongoDB
-	mongoID, err := s.mongoRepo.Insert(ctx, &payload)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	// Simpan reference di PostgreSQL
-	ref := &models.AchievementReference{
-		ID:                 uuid.New().String(),
-		StudentID:          student.ID,
-		MongoAchievementID: mongoID,
-		Status:             "draft",
-		CreatedAt:          now,
-		UpdatedAt:          now,
-	}
-
-	if _, err := s.refRepo.Create(ref); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	payload.ID = mongoID
-
-	return c.Status(201).JSON(payload)
-}
-
-func (s *achievementService) UploadAttachment(c *fiber.Ctx) error {
-	ctx := context.Background()
-	id := c.Params("id")
-
-	file, err := c.FormFile("file")
-	if err != nil {
-		return c.Status(400).JSON(fiber.Map{
-			"error": "file is required",
-		})
-	}
-
-	// contoh simpan file (pseudo)
-	fileURL := "/uploads/" + file.Filename
-
-	attachment := models.AchievementAttachment{
-		FileName:   file.Filename,
-		FileUrl:    fileURL,
-		FileType:   file.Header.Get("Content-Type"),
-		UploadedAt: time.Now(),
-	}
-
-	// Push attachment ke MongoDB
-	if err := s.mongoRepo.AddAttachment(ctx, id, attachment); err != nil {
-		return c.Status(500).JSON(fiber.Map{
-			"error": err.Error(),
-		})
-	}
-
-	return c.JSON(fiber.Map{
-		"message": "attachment uploaded",
-		"file":    attachment,
-	})
-}
-
-//
-// FR-004 — Submit Draft (draft → submitted)
-//
-func (s *achievementService) Submit(c *fiber.Ctx) error {
-    ctx := context.Background()
-    user := c.Locals("user").(*models.JWTClaims)
-    id := c.Params("id")
-
-    // 1️⃣ Ambil student.ID dari user.ID
-    student, err := s.studentRepo.FindByUserID(user.UserID)
-    if err != nil {
-        return c.Status(404).JSON(fiber.Map{"error": "student profile not found"})
-    }
-
-    // 2️⃣ Ambil dokumen achievement dari MongoDB
-    ach, err := s.mongoRepo.FindByID(ctx, id)
-    if err != nil {
-        return c.Status(404).JSON(fiber.Map{"error": "achievement not found"})
-    }
-
-    // 3️⃣ Cek apakah achievement milik student ini
-    if ach.StudentID != student.ID {
-        return c.Status(403).JSON(fiber.Map{"error": "unauthorized"})
-    }
-
-    // 4️⃣ Ambil reference Postgres berdasarkan MongoID
-    ref, err := s.refRepo.GetByMongoID(id)
-    if err != nil {
-        return c.Status(404).JSON(fiber.Map{"error": "achievement reference not found"})
-    }
-
-    // 5️⃣ Pastikan status masih draft
-    if ref.Status != "draft" {
-        return c.Status(400).JSON(fiber.Map{"error": "only draft can be submitted"})
-    }
-
-    // 6️⃣ Update status ke submitted
-    now := time.Now()
-    if err := s.refRepo.UpdateStatusByMongoID(id, "submitted", &now); err != nil {
-        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-    }
-
-    return c.JSON(fiber.Map{"message": "submitted"})
-}
-
-
-//
-// FR-005 — Soft Delete Draft
-//
-func (s *achievementService) Delete(c *fiber.Ctx) error {
-    ctx := context.Background()
-    user := c.Locals("user").(*models.JWTClaims)
-    id := c.Params("id")
-
-    // Ambil student berdasarkan userID
-    student, err := s.studentRepo.FindByUserID(user.UserID)
-    if err != nil {
-        return c.Status(404).JSON(fiber.Map{"error": "student profile not found"})
-    }
-
-    // Ambil reference Postgres berdasarkan MongoID
-    ref, err := s.refRepo.GetByMongoID(id)
-    if err != nil {
-        return c.Status(404).JSON(fiber.Map{"error": "achievement reference not found"})
-    }
-
-    // Cek authorization berdasarkan student ID
-    if ref.StudentID != student.ID {
-        return c.Status(403).JSON(fiber.Map{"error": "unauthorized"})
-    }
-
-    if ref.Status != "draft" {
-        return c.Status(400).JSON(fiber.Map{"error": "only draft can be deleted"})
-    }
-
-    // Soft delete di MongoDB
-    if err := s.mongoRepo.SoftDelete(ctx, id); err != nil {
-        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-    }
-
-    // Soft delete di Postgres: ubah status menjadi 'deleted'
-    if err := s.refRepo.SoftDeleteByMongoID(id); err != nil {
-        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-    }
-
-    return c.JSON(fiber.Map{"message": "deleted"})
-}
-
-
-//
-// GET /api/v1/achievements
-//
-func (s *achievementService) List(c *fiber.Ctx) error {
-
-	// =========================
-	// Pagination
-	// =========================
-	page, _ := strconv.Atoi(c.Query("page", "1"))
-	limit, _ := strconv.Atoi(c.Query("limit", "10"))
-
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 {
-		limit = 10
-	}
-
-	offset := (page - 1) * limit
-
-	user := c.Locals("user").(*models.JWTClaims)
-	ctx := context.Background()
-
-	var results []fiber.Map
-
-	// =========================
-	// ROLE: MAHASISWA
-	// =========================
-	if user.Role == "Mahasiswa" {
-
-		student, err := s.studentRepo.FindByUserID(user.UserID)
+		student, err := s.StudentRepo.FindByUserID(user.UserID)
 		if err != nil {
 			return c.Status(404).JSON(fiber.Map{"error": "student profile not found"})
 		}
 
-		refs, err := s.refRepo.GetByStudentID(student.ID)
+		var payload models.MongoAchievement
+		if err := c.BodyParser(&payload); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		now := time.Now()
+		payload.StudentID = student.ID
+		payload.Attachments = []models.AchievementAttachment{}
+		payload.Points = 0
+		payload.CreatedAt = now
+		payload.UpdatedAt = now
+
+		mongoID, err := s.MongoRepo.Insert(context.Background(), &payload)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		for _, ref := range refs {
-			doc, err := s.mongoRepo.FindByID(ctx, ref.MongoAchievementID)
-			if err != nil {
-				continue
-			}
-
-			results = append(results, fiber.Map{
-				"id":              doc.ID,
-				"student_id":      ref.StudentID,
-				"achievementType": doc.AchievementType,
-				"title":           doc.Title,
-				"description":     doc.Description,
-				"details":         doc.Details,
-				"attachments":     doc.Attachments,
-				"tags":            doc.Tags,
-				"points":          doc.Points,
-				"status":          ref.Status,
-				"submittedAt":     ref.SubmittedAt,
-				"createdAt":       doc.CreatedAt,
-				"updatedAt":       doc.UpdatedAt,
-			})
-		}
-	}
-
-	// =========================
-	// ROLE: DOSEN WALI (FR-006)
-	// =========================
-	if user.Role == "Dosen Wali" {
-
-	lecturer, err := s.lecturerRepo.FindByUserID(user.UserID)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "lecturer profile not found"})
-	}
-
-	students, err := s.studentRepo.FindByAdvisorID(lecturer.ID)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	for _, student := range students {
-
-		refs, err := s.refRepo.GetByStudentID(student.ID)
-		if err != nil {
-			continue
+		ref := &models.AchievementReference{
+			ID:                 uuid.New().String(),
+			StudentID:          student.ID,
+			MongoAchievementID: mongoID,
+			Status:             "draft",
+			CreatedAt:          now,
+			UpdatedAt:          now,
 		}
 
-		for _, ref := range refs {
-
-			// opsional sesuai FR-006
-			if ref.Status != "submitted" {
-				continue
-			}
-
-			doc, err := s.mongoRepo.FindByID(ctx, ref.MongoAchievementID)
-			if err != nil {
-				continue
-			}
-
-			results = append(results, fiber.Map{
-				"id":              doc.ID,
-				"student_id":      student.ID,
-				"achievementType": doc.AchievementType,
-				"title":           doc.Title,
-				"description":     doc.Description,
-				"details":         doc.Details,
-				"attachments":     doc.Attachments,
-				"tags":            doc.Tags,
-				"points":          doc.Points,
-				"status":          ref.Status,
-				"submittedAt":     ref.SubmittedAt,
-				"createdAt":       doc.CreatedAt,
-				"updatedAt":       doc.UpdatedAt,
-			})
+		if _, err := s.RefRepo.Create(ref); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+
+		return c.Status(201).JSON(fiber.Map{
+			"id":     mongoID,
+			"title":  payload.Title,
+			"status": "draft",
+		})
 	}
 }
 
-	// =========================
-	// ROLE: ADMIN (FR-010)
-	// =========================
-	if user.Role == "Admin" {
+// ListAchievements godoc
+// @Summary List achievements
+// @Description Melihat daftar prestasi berdasarkan role (mahasiswa, dosen, admin)
+// @Tags Achievements
+// @Accept json
+// @Produce json
+// @Param page query int false "Page number"
+// @Param limit query int false "Limit per page"
+// @Success 200 {array} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /achievements [get]
+func (s *AchievementService) ListAchievements() fiber.Handler {
+	return func(c *fiber.Ctx) error {
 
-		refs, err := s.refRepo.GetAll()
+		page, _ := strconv.Atoi(c.Query("page", "1"))
+		limit, _ := strconv.Atoi(c.Query("limit", "10"))
+
+		if page < 1 {
+			page = 1
+		}
+		if limit < 1 {
+			limit = 10
+		}
+
+		offset := (page - 1) * limit
+		user := c.Locals("user").(*models.JWTClaims)
+		ctx := context.Background()
+
+		results := []fiber.Map{}
+
+		switch strings.ToLower(user.Role) {
+
+		case "mahasiswa":
+			student, err := s.StudentRepo.FindByUserID(user.UserID)
+			if err != nil {
+				return c.Status(404).JSON(fiber.Map{"error": "student profile not found"})
+			}
+
+			refs, _ := s.RefRepo.GetByStudentID(student.ID)
+			for _, ref := range refs {
+				doc, err := s.MongoRepo.FindByID(ctx, ref.MongoAchievementID)
+				if err != nil {
+					continue
+				}
+				results = append(results, fiber.Map{
+					"id":     ref.MongoAchievementID,
+					"title":  doc.Title,
+					"status": ref.Status,
+				})
+			}
+
+		case "dosen wali", "dosen_wali":
+			lecturer, err := s.LecturerRepo.FindByUserID(user.UserID)
+			if err != nil {
+				return c.Status(404).JSON(fiber.Map{"error": "lecturer profile not found"})
+			}
+
+			students, _ := s.StudentRepo.FindByAdvisorID(lecturer.ID)
+			for _, student := range students {
+				refs, _ := s.RefRepo.GetByStudentID(student.ID)
+				for _, ref := range refs {
+					if ref.Status != "submitted" {
+						continue
+					}
+					doc, err := s.MongoRepo.FindByID(ctx, ref.MongoAchievementID)
+					if err != nil {
+						continue
+					}
+					results = append(results, fiber.Map{
+						"id":     ref.MongoAchievementID,
+						"title":  doc.Title,
+						"status": ref.Status,
+					})
+				}
+			}
+
+		case "admin":
+			refs, _ := s.RefRepo.GetAll()
+			for _, ref := range refs {
+				doc, err := s.MongoRepo.FindByID(ctx, ref.MongoAchievementID)
+				if err != nil {
+					continue
+				}
+				results = append(results, fiber.Map{
+					"id":        ref.MongoAchievementID,
+					"title":     doc.Title,
+					"status":    ref.Status,
+					"studentId": ref.StudentID,
+				})
+			}
+		}
+
+		end := offset + limit
+		if offset > len(results) {
+			results = []fiber.Map{}
+		} else if end > len(results) {
+			results = results[offset:]
+		} else {
+			results = results[offset:end]
+		}
+
+		return c.JSON(results)
+	}
+}
+
+// GetAchievementByID godoc
+// @Summary Get achievement by ID
+// @Description Melihat detail prestasi tertentu
+// @Tags Achievements
+// @Accept json
+// @Produce json
+// @Param id path string true "Achievement ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /achievements/{id} [get]
+func (s *AchievementService) GetAchievementByID() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+
+		id := c.Params("id")
+		ctx := context.Background()
+
+		ref, err := s.RefRepo.GetByMongoID(id)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+		}
+
+		doc, err := s.MongoRepo.FindByID(ctx, id)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+		}
+
+		return c.JSON(fiber.Map{
+			"id":          id,
+			"title":       doc.Title,
+			"description": doc.Description,
+			"details":     doc.Details,
+			"attachments": doc.Attachments,
+			"points":      doc.Points,
+			"status":      ref.Status,
+		})
+	}
+}
+
+// UpdateAchievement godoc
+// @Summary Update achievement
+// @Description Memperbarui data prestasi
+// @Tags Achievements
+// @Accept json
+// @Produce json
+// @Param id path string true "Achievement ID"
+// @Param achievement body models.MongoAchievement true "Achievement Data"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /achievements/{id} [put]
+func (s *AchievementService) UpdateAchievement() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+
+		id := c.Params("id")
+		var payload models.MongoAchievement
+
+		if err := c.BodyParser(&payload); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		if err := s.MongoRepo.Update(context.Background(), id, &payload); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		return c.JSON(fiber.Map{"message": "updated"})
+	}
+}
+
+// DeleteAchievement godoc
+// @Summary Delete achievement
+// @Description Menghapus prestasi (soft delete)
+// @Tags Achievements
+// @Accept json
+// @Produce json
+// @Param id path string true "Achievement ID"
+// @Success 200 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /achievements/{id} [delete]
+func (s *AchievementService) DeleteAchievement() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+
+		id := c.Params("id")
+
+		_ = s.MongoRepo.SoftDelete(context.Background(), id)
+		_ = s.RefRepo.SoftDeleteByMongoID(id)
+
+		return c.JSON(fiber.Map{"message": "deleted"})
+	}
+}
+
+
+// SubmitAchievement godoc
+// @Summary Submit achievement
+// @Description Mahasiswa mengirim prestasi untuk diverifikasi
+// @Tags Achievements
+// @Accept json
+// @Produce json
+// @Param id path string true "Achievement ID"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /achievements/{id}/submit [post]
+func (s *AchievementService) SubmitAchievement() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+
+		id := c.Params("id")
+		now := time.Now()
+
+		if err := s.RefRepo.UpdateStatusByMongoID(id, "submitted", &now); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		return c.JSON(fiber.Map{"message": "submitted"})
+	}
+}
+
+// VerifyAchievement godoc
+// @Summary Verify achievement
+// @Description Dosen/admin memverifikasi prestasi
+// @Tags Achievements
+// @Accept json
+// @Produce json
+// @Param id path string true "Achievement ID"
+// @Param points body object true "Points to assign" 
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /achievements/{id}/verify [post]
+func (s *AchievementService) VerifyAchievement() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+
+		id := c.Params("id")
+
+		var payload struct {
+			Points int `json:"points"`
+		}
+		if err := c.BodyParser(&payload); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		user := c.Locals("user").(*models.JWTClaims)
+
+		if err := s.MongoRepo.UpdatePoints(context.Background(), id, payload.Points); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to update points: " + err.Error()})
+		}
+
+		if err := s.RefRepo.VerifyByMongoID(id, user.UserID, time.Now()); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to verify achievement: " + err.Error()})
+		}
+
+		return c.JSON(fiber.Map{"status": "verified"})
+	}
+}
+
+// RejectAchievement godoc
+// @Summary Reject achievement
+// @Description Dosen/admin menolak prestasi
+// @Tags Achievements
+// @Accept json
+// @Produce json
+// @Param id path string true "Achievement ID"
+// @Param rejection_note body object true "Reason for rejection"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /achievements/{id}/reject [post]
+func (s *AchievementService) RejectAchievement() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+
+		id := c.Params("id")
+
+		var payload struct {
+			RejectionNote string `json:"rejection_note"`
+		}
+
+		if err := c.BodyParser(&payload); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		_ = s.RefRepo.RejectByMongoID(id, payload.RejectionNote)
+		return c.JSON(fiber.Map{"status": "rejected"})
+	}
+}
+
+// GetAchievementHistory godoc
+// @Summary Get achievement history
+// @Description Melihat riwayat status prestasi
+// @Tags Achievements
+// @Accept json
+// @Produce json
+// @Param id path string true "Achievement ID"
+// @Success 200 {array} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /achievements/{id}/history [get]
+func (s *AchievementService) GetAchievementHistory() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+
+		id := c.Params("id")
+
+		history, err := s.RefRepo.GetHistoryByMongoID(id)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		for _, ref := range refs {
-			doc, err := s.mongoRepo.FindByID(ctx, ref.MongoAchievementID)
-			if err != nil {
+		return c.JSON(history)
+	}
+}
+
+// UploadAttachment godoc
+// @Summary Upload attachments
+// @Description Mahasiswa mengunggah file pendukung prestasi sebelum submit
+// @Tags Achievements
+// @Accept multipart/form-data
+// @Produce json
+// @Param id path string true "Achievement ID"
+// @Param file formData file true "File to upload"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /achievements/{id}/attachments [post]
+func (s *AchievementService) UploadAttachment() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+
+		id := c.Params("id")
+		user := c.Locals("user").(*models.JWTClaims)
+		ctx := context.Background()
+
+		student, err := s.StudentRepo.FindByUserID(user.UserID)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "student profile not found"})
+		}
+
+		ref, err := s.RefRepo.GetByMongoID(id)
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "achievement not found"})
+		}
+
+		if ref.StudentID != student.ID {
+			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
+		}
+
+		form, err := c.MultipartForm()
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "failed to read form: " + err.Error()})
+		}
+
+		files := form.File["files"]
+		if len(files) == 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "no files uploaded"})
+		}
+
+		var attachments []models.AchievementAttachment
+
+		for _, file := range files {
+			dst := "./uploads/" + file.Filename
+			if err := c.SaveFile(file, dst); err != nil {
 				continue
 			}
 
-			results = append(results, fiber.Map{
-				"id":              doc.ID,
-				"student_id":      ref.StudentID,
-				"achievementType": doc.AchievementType,
-				"title":           doc.Title,
-				"description":     doc.Description,
-				"details":         doc.Details,
-				"attachments":     doc.Attachments,
-				"tags":            doc.Tags,
-				"points":          doc.Points,
-				"status":          ref.Status,
-				"submittedAt":     ref.SubmittedAt,
-				"createdAt":       doc.CreatedAt,
-				"updatedAt":       doc.UpdatedAt,
+			attachments = append(attachments, models.AchievementAttachment{
+				FileName:   file.Filename,
+				FileUrl:    dst,
+				FileType:   file.Header.Get("Content-Type"),
+				UploadedAt: time.Now(),
 			})
 		}
-	}
 
-	// =========================
-	// Pagination FINAL
-	// =========================
-	end := offset + limit
-	if offset > len(results) {
-		results = []fiber.Map{}
-	} else {
-		if end > len(results) {
-			end = len(results)
+		for _, att := range attachments {
+			if err := s.MongoRepo.AddAttachment(ctx, id, att); err != nil {
+				return c.Status(500).JSON(fiber.Map{"error": "failed to save attachment: " + err.Error()})
+			}
 		}
-		results = results[offset:end]
-	}
 
-	return c.JSON(results)
-}
-
-
-//
-// PUT /api/v1/achievements/:id
-//
-func (s *achievementService) Update(c *fiber.Ctx) error {
-	user := c.Locals("user").(*models.JWTClaims)
-	id := c.Params("id")
-	ctx := context.Background()
-
-	ref, err := s.refRepo.GetByMongoID(id)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "achievement reference not found"})
-	}
-
-	if ref.StudentID != user.UserID {
-		return c.Status(403).JSON(fiber.Map{"error": "unauthorized"})
-	}
-
-	if ref.Status != "draft" {
-		return c.Status(400).JSON(fiber.Map{"error": "only draft can be updated"})
-	}
-
-	var payload models.MongoAchievement
-	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	// Update fields (title, description, details, attachments)
-	err = s.mongoRepo.Update(ctx, id, &payload)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	return c.JSON(fiber.Map{"message": "updated"})
-}
-
-func (s *achievementService) GetByID(c *fiber.Ctx) error {
-	id := c.Params("id")
-	ctx := context.Background()
-
-	// Ambil reference dari PostgreSQL
-	ref, err := s.refRepo.GetByMongoID(id)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{
-			"error": "achievement reference not found",
+		return c.JSON(fiber.Map{
+			"message":     "files uploaded",
+			"attachments": attachments,
 		})
 	}
-
-	// Ambil detail dari MongoDB
-	doc, err := s.mongoRepo.FindByID(ctx, id)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{
-			"error": "achievement not found",
-		})
-	}
-
-	return c.JSON(fiber.Map{
-		"id":              doc.ID,
-		"student_id":      ref.StudentID,
-		"achievementType": doc.AchievementType,
-		"title":           doc.Title,
-		"description":     doc.Description,
-		"details":         doc.Details,
-		"attachments":     doc.Attachments,
-		"tags":            doc.Tags,
-		"points":          doc.Points,
-		"status":          ref.Status,
-		"submittedAt":     ref.SubmittedAt,
-		"createdAt":       doc.CreatedAt,
-		"updatedAt":       doc.UpdatedAt,
-	})
 }
 
-func (s *achievementService) Verify(c *fiber.Ctx) error {
-    ctx := context.Background()
-    user := c.Locals("user").(*models.JWTClaims)
-    id := c.Params("id")
-
-    var payload struct {
-        Points int `json:"points"`
-    }
-
-    if err := c.BodyParser(&payload); err != nil {
-        return c.Status(400).JSON(fiber.Map{
-            "error": "invalid request body",
-        })
-    }
-
-    if payload.Points <= 0 {
-        return c.Status(400).JSON(fiber.Map{
-            "error": "points must be greater than 0",
-        })
-    }
-
-    ref, err := s.refRepo.GetByMongoID(id)
-    if err != nil {
-        return c.Status(404).JSON(fiber.Map{"error": "achievement not found"})
-    }
-
-    if ref.Status != "submitted" {
-        return c.Status(400).JSON(fiber.Map{
-            "error": "only submitted achievement can be verified",
-        })
-    }
-
-    // 1️⃣ Update points di MongoDB
-    if err := s.mongoRepo.UpdatePoints(ctx, id, payload.Points); err != nil {
-        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-    }
-
-    // 2️⃣ Update status di PostgreSQL
-    if err := s.refRepo.VerifyByMongoID(
-        id,
-        user.UserID,
-        time.Now(),
-    ); err != nil {
-        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-    }
-
-    return c.JSON(fiber.Map{
-        "status": "verified",
-        "points": payload.Points,
-    })
-}
-
-func (s *achievementService) Reject(c *fiber.Ctx) error {
-    id := c.Params("id")
-
-    var payload struct {
-        RejectionNote string `json:"rejection_note"`
-    }
-
-    if err := c.BodyParser(&payload); err != nil {
-        return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-    }
-
-    if payload.RejectionNote == "" {
-        return c.Status(400).JSON(fiber.Map{
-            "error": "rejection_note is required",
-        })
-    }
-
-    ref, err := s.refRepo.GetByMongoID(id)
-    if err != nil {
-        return c.Status(404).JSON(fiber.Map{"error": "achievement not found"})
-    }
-
-    if ref.Status != "submitted" {
-        return c.Status(400).JSON(fiber.Map{
-            "error": "only submitted achievement can be rejected",
-        })
-    }
-
-    err = s.refRepo.RejectByMongoID(id, payload.RejectionNote)
-    if err != nil {
-        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-    }
-
-    return c.JSON(fiber.Map{
-        "status": "rejected",
-    })
-}
-
-func (s *achievementService) History(c *fiber.Ctx) error {
-    mongoID := c.Params("id")
-
-    history, err := s.refRepo.GetHistoryByMongoID(mongoID)
-    if err != nil {
-        return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-    }
-
-    return c.JSON(fiber.Map{
-        "achievement_id": mongoID,
-        "history":        history,
-    })
-}

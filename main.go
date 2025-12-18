@@ -1,90 +1,43 @@
+// @title UAS Achievement API
+// @version 1.0
+// @description API untuk mengelola prestasi mahasiswa
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.email support@example.com
+
+// @host localhost:3000
+// @BasePath /api/v1
+// @schemes http
+
 package main
 
 import (
-	"context"
 	"log"
-	"os"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/arsmn/fiber-swagger/v2" // benar
 
+
+	_ "uas/docs" // generated swagger docs
 	"uas/config"
 	"uas/databases"
-	"uas/app/repositories"
-	"uas/app/services"
 	"uas/routes"
 )
 
 func main() {
 	config.LoadEnv()
 
-	// CONNECT POSTGRES
-	pg, err := databases.ConnectPostgres()
-	if err != nil {
-		log.Fatal("Failed to connect PostgreSQL:", err)
-	}
-	defer pg.Close()
-
-	// CONNECT MONGODB
-	mongoUri := os.Getenv("MONGO_URI")
-	mongo, err := databases.ConnectMongo(mongoUri)
-	if err != nil {
-		log.Fatal("Failed to connect MongoDB:", err)
-	}
-	defer mongo.Disconnect(context.Background())
-
-	mongoDB := mongo.Database("uas")
-	mongoRepo := repositories.NewAchievementMongoReportRepository(mongoDB)
+	databases.ConnectPostgres()
+	databases.ConnectMongoDB()
 
 	app := fiber.New()
 
-	// ============= REPOSITORIES =============
+	// Swagger route
+	app.Get("/swagger/*", swagger.HandlerDefault) // default: http://localhost:3000/swagger/index.html
 
-	userRepo := repositories.NewUserRepository(pg)
-	studentRepo := repositories.NewStudentRepository(pg)
-	lecturerRepo := repositories.NewLecturerRepository(pg)
-	refreshRepo := repositories.NewRefreshRepository(pg)
-	reportRepo := repositories.NewReportRepository(pg)
-
-
-	achievementMongoRepo := repositories.NewAchievementMongoRepository(mongo)
-	achievementRefRepo := repositories.NewAchievementReferenceRepo(pg)
-
-
-
-	// ============= SERVICES =============
-
-	authService := services.NewAuthService(
-		userRepo,
-		studentRepo,
-		lecturerRepo,
-		refreshRepo,
-	)
-
-	achievementService := services.NewAchievementService(
-		achievementMongoRepo,
-		achievementRefRepo,
-		studentRepo,
-		lecturerRepo,
-	)
-
-	reportService := services.NewReportService(reportRepo, mongoRepo)
-
-	routes.Setup(
-		app,
-		authService,
-		userRepo,
-		userRepo,
-		studentRepo,
-		lecturerRepo,
-		achievementService,
-		achievementRefRepo,
-		achievementMongoRepo,
-		reportService,
-	)
+	routes.RegisterRoutes(app)
 
 	log.Println("Server running at http://localhost:3000")
-
-	if err := app.Listen(":3000"); err != nil {
-		log.Fatal(err)
-	}
+	log.Fatal(app.Listen(":3000"))
 }

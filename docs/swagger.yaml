@@ -1,0 +1,1167 @@
+basePath: /api/v1
+definitions:
+  models.AchievementAttachment:
+    properties:
+      fileName:
+        type: string
+      fileType:
+        type: string
+      fileUrl:
+        type: string
+      uploadedAt:
+        type: string
+    type: object
+  models.AchievementDetails:
+    properties:
+      authors:
+        items:
+          type: string
+        type: array
+      certificationName:
+        type: string
+      certificationNumber:
+        type: string
+      competitionLevel:
+        type: string
+      competitionName:
+        type: string
+      customFields:
+        additionalProperties: true
+        type: object
+      eventDate:
+        type: string
+      issn:
+        type: string
+      issuedBy:
+        type: string
+      location:
+        type: string
+      medalType:
+        type: string
+      organizationName:
+        type: string
+      organizer:
+        type: string
+      period:
+        properties:
+          end:
+            type: string
+          start:
+            type: string
+        type: object
+      position:
+        type: string
+      publicationTitle:
+        type: string
+      publicationType:
+        type: string
+      publisher:
+        type: string
+      rank:
+        type: integer
+      score:
+        type: number
+      validUntil:
+        type: string
+    type: object
+  models.AssignRoleRequest:
+    properties:
+      role_id:
+        type: string
+    type: object
+  models.CreateUserRequest:
+    properties:
+      email:
+        type: string
+      fullName:
+        type: string
+      lecturer:
+        $ref: '#/definitions/models.LecturerPayload'
+      password:
+        type: string
+      roleId:
+        type: string
+      student:
+        $ref: '#/definitions/models.StudentPayload'
+      username:
+        type: string
+    type: object
+  models.LecturerPayload:
+    properties:
+      department:
+        type: string
+      lecturerId:
+        type: string
+    type: object
+  models.MongoAchievement:
+    properties:
+      achievementType:
+        type: string
+      attachments:
+        items:
+          $ref: '#/definitions/models.AchievementAttachment'
+        type: array
+      createdAt:
+        type: string
+      deletedAt:
+        type: string
+      description:
+        type: string
+      details:
+        $ref: '#/definitions/models.AchievementDetails'
+      id:
+        type: string
+      points:
+        type: integer
+      studentID:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  models.Student:
+    properties:
+      academicYear:
+        type: string
+      advisorID:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: string
+      programStudy:
+        type: string
+      studentID:
+        type: string
+      userID:
+        type: string
+    type: object
+  models.StudentPayload:
+    properties:
+      academicYear:
+        type: string
+      advisorId:
+        type: string
+      programStudy:
+        type: string
+      studentId:
+        type: string
+    type: object
+host: localhost:3000
+info:
+  contact:
+    email: support@example.com
+    name: API Support
+  description: API untuk mengelola prestasi mahasiswa
+  termsOfService: http://swagger.io/terms/
+  title: UAS Achievement API
+  version: "1.0"
+paths:
+  /achievements:
+    get:
+      consumes:
+      - application/json
+      description: Melihat daftar prestasi berdasarkan role (mahasiswa, dosen, admin)
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Limit per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: List achievements
+      tags:
+      - Achievements
+    post:
+      consumes:
+      - application/json
+      description: Mahasiswa menambahkan prestasi baru
+      parameters:
+      - description: Achievement Data
+        in: body
+        name: achievement
+        required: true
+        schema:
+          $ref: '#/definitions/models.MongoAchievement'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Create new achievement
+      tags:
+      - Achievements
+  /achievements/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Menghapus prestasi (soft delete)
+      parameters:
+      - description: Achievement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Delete achievement
+      tags:
+      - Achievements
+    get:
+      consumes:
+      - application/json
+      description: Melihat detail prestasi tertentu
+      parameters:
+      - description: Achievement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get achievement by ID
+      tags:
+      - Achievements
+    put:
+      consumes:
+      - application/json
+      description: Memperbarui data prestasi
+      parameters:
+      - description: Achievement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Achievement Data
+        in: body
+        name: achievement
+        required: true
+        schema:
+          $ref: '#/definitions/models.MongoAchievement'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update achievement
+      tags:
+      - Achievements
+  /achievements/{id}/attachments:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Mahasiswa mengunggah file pendukung prestasi sebelum submit
+      parameters:
+      - description: Achievement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: File to upload
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Upload attachments
+      tags:
+      - Achievements
+  /achievements/{id}/history:
+    get:
+      consumes:
+      - application/json
+      description: Melihat riwayat status prestasi
+      parameters:
+      - description: Achievement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get achievement history
+      tags:
+      - Achievements
+  /achievements/{id}/reject:
+    post:
+      consumes:
+      - application/json
+      description: Dosen/admin menolak prestasi
+      parameters:
+      - description: Achievement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Reason for rejection
+        in: body
+        name: rejection_note
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Reject achievement
+      tags:
+      - Achievements
+  /achievements/{id}/submit:
+    post:
+      consumes:
+      - application/json
+      description: Mahasiswa mengirim prestasi untuk diverifikasi
+      parameters:
+      - description: Achievement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Submit achievement
+      tags:
+      - Achievements
+  /achievements/{id}/verify:
+    post:
+      consumes:
+      - application/json
+      description: Dosen/admin memverifikasi prestasi
+      parameters:
+      - description: Achievement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Points to assign
+        in: body
+        name: points
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Verify achievement
+      tags:
+      - Achievements
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Autentikasi user dan mengembalikan access token & refresh token
+      parameters:
+      - description: Login credentials
+        in: body
+        name: login
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: User login
+      tags:
+      - Auth
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Menghapus refresh token dari database
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Logout user
+      tags:
+      - Auth
+  /auth/profile:
+    get:
+      consumes:
+      - application/json
+      description: Mendapatkan data profil user yang sedang login
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get user profile
+      tags:
+      - Auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Menghasilkan access token baru menggunakan refresh token
+      parameters:
+      - description: Refresh token
+        in: body
+        name: refresh
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Refresh access token
+      tags:
+      - Auth
+  /lecturers:
+    get:
+      consumes:
+      - application/json
+      description: Mendapatkan daftar semua dosen
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: List all lecturers
+      tags:
+      - Lecturer
+  /lecturers/{id}/advisees:
+    get:
+      consumes:
+      - application/json
+      description: Mendapatkan daftar mahasiswa bimbingan dari dosen tertentu
+      parameters:
+      - description: Lecturer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get lecturer's advisees
+      tags:
+      - Lecturer
+  /reports/statistics:
+    get:
+      consumes:
+      - application/json
+      description: Mendapatkan statistik prestasi mahasiswa (total, rata-rata, dan
+        per tipe)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get achievement statistics
+      tags:
+      - Report
+  /reports/students/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Mendapatkan laporan prestasi mahasiswa tertentu beserta poin dan
+        rata-rata per tipe
+      parameters:
+      - description: Student ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get student achievement report
+      tags:
+      - Report
+  /students:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar semua mahasiswa
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get all students
+      tags:
+      - Student
+    post:
+      consumes:
+      - application/json
+      description: Membuat mahasiswa baru
+      parameters:
+      - description: Student payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.Student'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Create new student
+      tags:
+      - Student
+  /students/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil data mahasiswa berdasarkan ID
+      parameters:
+      - description: Student ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get student by ID
+      tags:
+      - Student
+  /students/{id}/achievements:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil semua prestasi yang dimiliki mahasiswa tertentu
+      parameters:
+      - description: Student ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get student's achievements
+      tags:
+      - Student
+  /students/{id}/advisor:
+    put:
+      consumes:
+      - application/json
+      description: Mengubah dosen pembimbing mahasiswa tertentu
+      parameters:
+      - description: Student ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Advisor payload {\
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties:
+            type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update student's advisor
+      tags:
+      - Student
+  /users:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil semua data user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get all users
+      tags:
+      - User
+    post:
+      consumes:
+      - application/json
+      description: Membuat user baru, bisa sekaligus mahasiswa atau dosen
+      parameters:
+      - description: User payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.CreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Create new user
+      tags:
+      - User
+  /users/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Menghapus user berdasarkan ID
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Delete user
+      tags:
+      - User
+    get:
+      consumes:
+      - application/json
+      description: Mengambil data user berdasarkan ID
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get user by ID
+      tags:
+      - User
+    put:
+      consumes:
+      - application/json
+      description: Memperbarui data user
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User payload
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update user
+      tags:
+      - User
+  /users/{id}/role:
+    put:
+      consumes:
+      - application/json
+      description: Mengubah role user
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Role payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.AssignRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Assign role to user
+      tags:
+      - User
+schemes:
+- http
+swagger: "2.0"

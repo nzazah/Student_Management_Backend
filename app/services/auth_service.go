@@ -8,37 +8,24 @@ import (
 
 	"uas/app/models"
 	"uas/app/repositories"
+	"uas/databases"
 	"uas/utils"
 )
 
-type AuthService struct {
-	RepoUser     repositories.IUserRepository
-	RepoStudent  repositories.IStudentRepository
-	RepoLecturer repositories.ILecturerRepository
-	RepoRefresh  repositories.IRefreshRepository
-}
-
-func NewAuthService(
-	userRepo repositories.IUserRepository,
-	studentRepo repositories.IStudentRepository,
-	lecturerRepo repositories.ILecturerRepository,
-	refreshRepo repositories.IRefreshRepository,
-) *AuthService {
-	return &AuthService{
-		RepoUser:     userRepo,
-		RepoStudent:  studentRepo,
-		RepoLecturer: lecturerRepo,
-		RepoRefresh:  refreshRepo,
-	}
-}
-
-/*
-====================================================
-LOGIN
-====================================================
-*/
-
-func (s *AuthService) Login(c *fiber.Ctx) error {
+// Login godoc
+// @Summary User login
+// @Description Autentikasi user dan mengembalikan access token & refresh token
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param login body object true "Login credentials" example({"username":"john123","password":"password123"})
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /auth/login [post]
+func Login(c *fiber.Ctx) error {
 	ctx := context.Background()
 
 	var req struct {
@@ -50,23 +37,30 @@ func (s *AuthService) Login(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 
-	user, err := s.RepoUser.FindByUsername(ctx, req.Username)
+	userRepo := repositories.NewUserRepository(databases.PSQL)
+	refreshRepo := repositories.NewRefreshRepository(databases.PSQL)
+
+	user, err := userRepo.FindByUsername(ctx, req.Username)
 	if err != nil {
 		return c.Status(401).JSON(fiber.Map{"error": "user not found"})
+	}
+
+	if !user.IsActive {
+		return c.Status(403).JSON(fiber.Map{"error": "user inactive"})
 	}
 
 	if !utils.CheckPassword(req.Password, user.PasswordHash) {
 		return c.Status(401).JSON(fiber.Map{"error": "invalid password"})
 	}
 
-	roleName, _ := s.RepoUser.GetRoleName(ctx, user.RoleID)
+	roleName, _ := userRepo.GetRoleName(ctx, user.RoleID)
 
-	permissions, err := s.RepoUser.GetPermissionsByUserID(ctx, user.ID)
+	perms, err := userRepo.GetPermissionsByUserID(ctx, user.ID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to load permissions"})
 	}
 
-	accessToken, err := utils.GenerateAccessTokenWithPermissions(*user, roleName, permissions)
+	accessToken, err := utils.GenerateAccessTokenWithPermissions(*user, roleName, perms)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to generate access token"})
 	}
@@ -76,8 +70,8 @@ func (s *AuthService) Login(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to generate refresh token"})
 	}
 
-	_ = s.RepoRefresh.Delete(user.ID)
-	_ = s.RepoRefresh.Save(user.ID, refreshToken)
+	_ = refreshRepo.Delete(user.ID)
+	_ = refreshRepo.Save(user.ID, refreshToken)
 
 	return c.JSON(fiber.Map{
 		"token":        accessToken,
@@ -87,18 +81,24 @@ func (s *AuthService) Login(c *fiber.Ctx) error {
 			"username":    user.Username,
 			"fullName":    user.FullName,
 			"role":        roleName,
-			"permissions": permissions,
+			"permissions": perms,
 		},
 	})
 }
 
-/*
-====================================================
-REFRESH TOKEN
-====================================================
-*/
-
-func (s *AuthService) Refresh(c *fiber.Ctx) error {
+// Refresh godoc
+// @Summary Refresh access token
+// @Description Menghasilkan access token baru menggunakan refresh token
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param refresh body object true "Refresh token" example({"refreshToken":"your_refresh_token"})
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /auth/refresh [post]
+func Refresh(c *fiber.Ctx) error {
 	ctx := context.Background()
 
 	var req struct {
@@ -119,34 +119,26 @@ func (s *AuthService) Refresh(c *fiber.Ctx) error {
 
 	userID := claims.Subject
 
-	if !s.RepoRefresh.Exists(userID, req.RefreshToken) {
+	userRepo := repositories.NewUserRepository(databases.PSQL)
+	refreshRepo := repositories.NewRefreshRepository(databases.PSQL)
+
+	if !refreshRepo.Exists(userID, req.RefreshToken) {
 		return c.Status(401).JSON(fiber.Map{"error": "refresh token expired or revoked"})
 	}
 
-	user, err := s.RepoUser.FindByID(ctx, userID)
+	user, err := userRepo.FindByID(ctx, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
 
-	roleName, _ := s.RepoUser.GetRoleName(ctx, user.RoleID)
+	roleName, _ := userRepo.GetRoleName(ctx, user.RoleID)
+	perms, _ := userRepo.GetPermissionsByUserID(ctx, user.ID)
 
-	permissions, err := s.RepoUser.GetPermissionsByUserID(ctx, user.ID)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "failed to load permissions"})
-	}
+	newAccess, _ := utils.GenerateAccessTokenWithPermissions(*user, roleName, perms)
+	newRefresh, _ := utils.GenerateRefreshToken(userID)
 
-	newAccess, err := utils.GenerateAccessTokenWithPermissions(*user, roleName, permissions)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "failed to generate access token"})
-	}
-
-	newRefresh, err := utils.GenerateRefreshToken(userID)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "failed to generate refresh token"})
-	}
-
-	_ = s.RepoRefresh.Delete(userID)
-	_ = s.RepoRefresh.Save(userID, newRefresh)
+	_ = refreshRepo.Delete(userID)
+	_ = refreshRepo.Save(userID, newRefresh)
 
 	return c.JSON(fiber.Map{
 		"token":        newAccess,
@@ -154,35 +146,48 @@ func (s *AuthService) Refresh(c *fiber.Ctx) error {
 	})
 }
 
-/*
-====================================================
-LOGOUT
-====================================================
-*/
-
-func (s *AuthService) Logout(c *fiber.Ctx) error {
+// Logout godoc
+// @Summary Logout user
+// @Description Menghapus refresh token dari database
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /auth/logout [post]
+func Logout(c *fiber.Ctx) error {
 	claims := c.Locals("user").(*models.JWTClaims)
-	_ = s.RepoRefresh.Delete(claims.UserID)
+
+	refreshRepo := repositories.NewRefreshRepository(databases.PSQL)
+	_ = refreshRepo.Delete(claims.UserID)
 
 	return c.JSON(fiber.Map{"message": "logged out"})
 }
 
-/*
-====================================================
-PROFILE
-====================================================
-*/
-
-func (s *AuthService) Profile(c *fiber.Ctx) error {
+// Profile godoc
+// @Summary Get user profile
+// @Description Mendapatkan data profil user yang sedang login
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /auth/profile [get]
+func Profile(c *fiber.Ctx) error {
 	ctx := context.Background()
 	claims := c.Locals("user").(*models.JWTClaims)
 
-	user, err := s.RepoUser.FindByID(ctx, claims.UserID)
+	userRepo := repositories.NewUserRepository(databases.PSQL)
+	studentRepo := repositories.NewStudentRepository(databases.PSQL)
+	lecturerRepo := repositories.NewLecturerRepository(databases.PSQL)
+
+	user, err := userRepo.FindByID(ctx, claims.UserID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
 
-	roleName, _ := s.RepoUser.GetRoleName(ctx, user.RoleID)
+	roleName, _ := userRepo.GetRoleName(ctx, user.RoleID)
 
 	result := fiber.Map{
 		"id":          user.ID,
@@ -190,19 +195,18 @@ func (s *AuthService) Profile(c *fiber.Ctx) error {
 		"email":       user.Email,
 		"fullName":    user.FullName,
 		"role":        roleName,
-		"createdAt":   user.CreatedAt,
 		"permissions": claims.Permissions,
 	}
 
 	if roleName == "Mahasiswa" {
-		if student, err := s.RepoStudent.FindByUserID(user.ID); err == nil {
-			result["mahasiswa"] = student
+		if s, err := studentRepo.FindByUserID(user.ID); err == nil {
+			result["mahasiswa"] = s
 		}
 	}
 
 	if roleName == "Dosen Wali" {
-		if lecturer, err := s.RepoLecturer.FindByUserID(user.ID); err == nil {
-			result["dosen_wali"] = lecturer
+		if d, err := lecturerRepo.FindByUserID(user.ID); err == nil {
+			result["dosen_wali"] = d
 		}
 	}
 

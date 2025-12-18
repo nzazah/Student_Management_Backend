@@ -3,104 +3,32 @@ package services
 import (
 	"context"
 	"time"
-	"fmt"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
 	"uas/app/models"
 	"uas/app/repositories"
+	"uas/databases"
 )
 
-/*
-====================================================
-INTERFACE
-====================================================
-*/
-
-type IUserService interface {
-	GetAllUsers(c *fiber.Ctx) error
-	GetUserByID(c *fiber.Ctx) error
-	CreateUser(c *fiber.Ctx) error
-	UpdateUser(c *fiber.Ctx) error
-	DeleteUser(c *fiber.Ctx) error
-	AssignRole(c *fiber.Ctx) error
-}
-
-/*
-====================================================
-SERVICE STRUCT
-====================================================
-*/
-
-type UserService struct {
-	userRepo     repositories.IUserManagementRepository
-	studentRepo  repositories.IStudentRepository
-    lecturerRepo repositories.ILecturerRepository
-}
-
-/*
-====================================================
-CONSTRUCTOR
-====================================================
-*/
-
-func NewUserService(
-	userRepo repositories.IUserManagementRepository,
-	studentRepo repositories.IStudentRepository,
-    lecturerRepo repositories.ILecturerRepository,
-) IUserService {
-	return &UserService{
-		userRepo:     userRepo,
-		studentRepo: studentRepo,
-        lecturerRepo: lecturerRepo,
-	}
-}
-
-/*
-====================================================
-DTO (REQUEST PAYLOAD)
-====================================================
-*/
-
-type CreateUserRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	FullName string `json:"fullName"`
-	RoleID   string `json:"roleId"`
-
-	Student  *StudentPayload  `json:"student,omitempty"`
-	Lecturer *LecturerPayload `json:"lecturer,omitempty"`
-}
-
-type StudentPayload struct {
-	StudentID    string  `json:"studentId"`
-	ProgramStudy string  `json:"programStudy"`
-	AcademicYear string  `json:"academicYear"`
-	AdvisorID    *string `json:"advisorId,omitempty"`
-}
-
-type LecturerPayload struct {
-	LecturerID string `json:"lecturerId"`
-	Department string `json:"department"`
-}
-
-
-type AssignRoleRequest struct {
-	RoleID string `json:"role_id"`
-}
-
-/*
-====================================================
-SERVICES
-====================================================
-*/
-
-func (s *UserService) GetAllUsers(c *fiber.Ctx) error {
+// GetAllUsers godoc
+// @Summary Get all users
+// @Description Mengambil semua data user
+// @Tags User
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /users [get]
+func GetAllUsers(c *fiber.Ctx) error {
 	ctx := context.Background()
 
-	users, err := s.userRepo.FindAll(ctx)
+	userRepo := repositories.NewUserRepository(databases.PSQL)
+
+	users, err := userRepo.FindAll(ctx)
 	if err != nil {
 		return fiber.NewError(500, err.Error())
 	}
@@ -108,40 +36,56 @@ func (s *UserService) GetAllUsers(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"data": users})
 }
 
-func (s *UserService) GetUserByID(c *fiber.Ctx) error {
+// GetUserByID godoc
+// @Summary Get user by ID
+// @Description Mengambil data user berdasarkan ID
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /users/{id} [get]
+func GetUserByID(c *fiber.Ctx) error {
 	ctx := context.Background()
 	id := c.Params("id")
 
-	user, err := s.userRepo.FindByID(ctx, id)
+	userRepo := repositories.NewUserRepository(databases.PSQL)
+
+	user, err := userRepo.FindByID(ctx, id)
 	if err != nil {
 		return fiber.NewError(404, "user not found")
 	}
 
-	return c.JSON(fiber.Map{
-		"user": user,
-	})
+	return c.JSON(fiber.Map{"user": user})
 }
 
-
-/*
-====================================================
-CREATE USER (ADMIN)
-====================================================
-*/
-
-func (s *UserService) CreateUser(c *fiber.Ctx) error {
+// CreateUser godoc
+// @Summary Create new user
+// @Description Membuat user baru, bisa sekaligus mahasiswa atau dosen
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param body body models.CreateUserRequest true "User payload"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /users [post]
+func CreateUser(c *fiber.Ctx) error {
 	ctx := context.Background()
 
-	var req CreateUserRequest
+	var req models.CreateUserRequest
 	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "invalid request")
+		return fiber.NewError(400, "invalid request")
 	}
 
-	// hash password
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "failed to hash password")
-	}
+	userRepo := repositories.NewUserRepository(databases.PSQL)
+	studentRepo := repositories.NewStudentRepository(databases.PSQL)
+	lecturerRepo := repositories.NewLecturerRepository(databases.PSQL)
+
+	hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 
 	user := &models.User{
 		ID:           uuid.NewString(),
@@ -155,14 +99,12 @@ func (s *UserService) CreateUser(c *fiber.Ctx) error {
 		UpdatedAt:    time.Now(),
 	}
 
-	// create user
-	if err := s.userRepo.Create(ctx, user); err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	if err := userRepo.Create(ctx, user); err != nil {
+		return fiber.NewError(500, err.Error())
 	}
 
-	// === create student profile jika RoleID mahasiswa ===
-	if req.RoleID == "e8c7223b-2905-45c7-b7d0-8b06345dd1d7" && req.Student != nil {
-		student := &models.Student{
+	if req.Student != nil {
+		studentRepo.Create(&models.Student{
 			ID:           uuid.NewString(),
 			UserID:       user.ID,
 			StudentID:    req.Student.StudentID,
@@ -170,44 +112,40 @@ func (s *UserService) CreateUser(c *fiber.Ctx) error {
 			AcademicYear: req.Student.AcademicYear,
 			AdvisorID:    req.Student.AdvisorID,
 			CreatedAt:    time.Now(),
-		}
-
-		if err := s.studentRepo.Create(student); err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, "failed to create student profile")
-		}
+		})
 	}
 
-	// === create lecturer profile jika RoleID dosen ===
-	if req.RoleID == "f09c60fc-abd0-45b2-930d-7be7e9f7599e" && req.Lecturer != nil {
-		lecturer := &models.Lecturer{
+	if req.Lecturer != nil {
+		lecturerRepo.Create(&models.Lecturer{
 			ID:         uuid.NewString(),
 			UserID:     user.ID,
 			LecturerID: req.Lecturer.LecturerID,
 			Department: req.Lecturer.Department,
 			CreatedAt:  time.Now(),
-		}
-
-		fmt.Printf("Creating lecturer: %+v\n", lecturer)
-
-		if err := s.lecturerRepo.Create(lecturer); err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, "failed to create lecturer profile")
-		}
+		})
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+	return c.Status(201).JSON(fiber.Map{
 		"message": "user created",
 		"user_id": user.ID,
 	})
 }
 
 
-/*
-====================================================
-UPDATE USER (ADMIN)
-====================================================
-*/
-
-func (s *UserService) UpdateUser(c *fiber.Ctx) error {
+// UpdateUser godoc
+// @Summary Update user
+// @Description Memperbarui data user
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Param body body map[string]interface{} true "User payload"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /users/{id} [put]
+func UpdateUser(c *fiber.Ctx) error {
 	ctx := context.Background()
 	id := c.Params("id")
 
@@ -222,56 +160,73 @@ func (s *UserService) UpdateUser(c *fiber.Ctx) error {
 		return fiber.NewError(400, "invalid request")
 	}
 
-	user := &models.User{
+	userRepo := repositories.NewUserRepository(databases.PSQL)
+
+	if err := userRepo.Update(ctx, &models.User{
 		ID:       id,
 		Username: req.Username,
 		Email:    req.Email,
 		FullName: req.FullName,
 		IsActive: req.IsActive,
-	}
-
-	if err := s.userRepo.Update(ctx, user); err != nil {
+	}); err != nil {
 		return fiber.NewError(500, err.Error())
 	}
 
 	return c.JSON(fiber.Map{"message": "user updated"})
 }
 
-/*
-====================================================
-DELETE USER (ADMIN)
-====================================================
-*/
-
-func (s *UserService) DeleteUser(c *fiber.Ctx) error {
+// DeleteUser godoc
+// @Summary Delete user
+// @Description Menghapus user berdasarkan ID
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Success 200 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /users/{id} [delete]
+func DeleteUser(c *fiber.Ctx) error {
 	ctx := context.Background()
 	id := c.Params("id")
 
-	if err := s.userRepo.Delete(ctx, id); err != nil {
+	userRepo := repositories.NewUserRepository(databases.PSQL)
+
+	if err := userRepo.Delete(ctx, id); err != nil {
 		return fiber.NewError(500, err.Error())
 	}
 
 	return c.JSON(fiber.Map{"message": "user deleted"})
 }
 
-/*
-====================================================
-ASSIGN ROLE (ADMIN)
-====================================================
-*/
-
-func (s *UserService) AssignRole(c *fiber.Ctx) error {
+// AssignRole godoc
+// @Summary Assign role to user
+// @Description Mengubah role user
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Param body body models.AssignRoleRequest true "Role payload"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /users/{id}/role [put]
+func AssignRole(c *fiber.Ctx) error {
 	ctx := context.Background()
 	id := c.Params("id")
 
-	var req AssignRoleRequest
+	var req models.AssignRoleRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(400, "invalid request")
 	}
 
-	if err := s.userRepo.UpdateRole(ctx, id, req.RoleID); err != nil {
+	userRepo := repositories.NewUserRepository(databases.PSQL)
+
+	if err := userRepo.UpdateRole(ctx, id, req.RoleID); err != nil {
 		return fiber.NewError(500, err.Error())
 	}
 
 	return c.JSON(fiber.Map{"message": "role updated"})
 }
+

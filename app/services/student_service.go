@@ -1,141 +1,132 @@
 package services
 
 import (
-	"errors"
 	"context"
+
 	"github.com/gofiber/fiber/v2"
+
 	"uas/app/models"
 	"uas/app/repositories"
+	"uas/databases"
 )
 
-type StudentService struct {
-	studentRepo repositories.IStudentRepository
-	achievementRefRepo repositories.IAchievementReferenceRepo
-	mongoAchRepo       repositories.IAchievementMongoRepository
-}
+// GetStudents godoc
+// @Summary Get all students
+// @Description Mengambil daftar semua mahasiswa
+// @Tags Student
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /students [get]
+func GetStudents(c *fiber.Ctx) error {
+	studentRepo := repositories.NewStudentRepository(databases.PSQL)
 
-func NewStudentService(
-	studentRepo repositories.IStudentRepository,
-	achievementRefRepo repositories.IAchievementReferenceRepo,
-	mongoAchRepo repositories.IAchievementMongoRepository,
-) *StudentService {
-	return &StudentService{
-		studentRepo:        studentRepo,
-		achievementRefRepo: achievementRefRepo,
-		mongoAchRepo:       mongoAchRepo,
-	}
-}
-
-/* =========================
-   GET /students
-   (Admin only)
-========================= */
-func (s *StudentService) GetAll(c *fiber.Ctx) error {
-	students, err := s.studentRepo.FindAll()
+	students, err := studentRepo.FindAll()
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
 
-	return c.JSON(fiber.Map{
-		"data": students,
-	})
+	return c.JSON(fiber.Map{"data": students})
 }
 
-/* =========================
-   GET /students/:id
-   Admin | Dosen | Mahasiswa (self)
-========================= */
-func (s *StudentService) GetByID(c *fiber.Ctx) error {
-	studentID := c.Params("id")
+// GetStudentByID godoc
+// @Summary Get student by ID
+// @Description Mengambil data mahasiswa berdasarkan ID
+// @Tags Student
+// @Accept json
+// @Produce json
+// @Param id path string true "Student ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /students/{id} [get]
+func GetStudentByID(c *fiber.Ctx) error {
+	studentRepo := repositories.NewStudentRepository(databases.PSQL)
 
-	student, err := s.studentRepo.FindByID(studentID)
+	studentID := c.Params("id")
+	student, err := studentRepo.FindByID(studentID)
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "student not found")
 	}
 
-	// OPTIONAL: pembatasan mahasiswa
-	role := c.Locals("role")
-	userID := c.Locals("user_id")
-
-	if role == "student" && student.UserID != userID {
-		return fiber.ErrForbidden
-	}
-
-	return c.JSON(fiber.Map{
-		"data": student,
-	})
+	return c.JSON(fiber.Map{"data": student})
 }
 
-/* =========================
-   GET /students/:id/achievements
-   Admin | Dosen | Mahasiswa (self)
-========================= */
-func (s *StudentService) GetAchievements(c *fiber.Ctx) error {
-	studentID := c.Params("id")
-
-	student, err := s.studentRepo.FindByID(studentID)
-	if err != nil {
-		return fiber.NewError(fiber.StatusNotFound, "student not found")
-	}
-
-	// Restrict Mahasiswa (hanya boleh lihat miliknya)
-	role := c.Locals("role")
-	userID := c.Locals("user_id")
-
-	if role == "Mahasiswa" && student.UserID != userID {
-		return fiber.ErrForbidden
-	}
-
-	// 1️⃣ Ambil reference dari PostgreSQL
-	refs, err := s.achievementRefRepo.GetByStudentID(studentID)
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-	}
-
+// GetStudentAchievements godoc
+// @Summary Get student's achievements
+// @Description Mengambil semua prestasi yang dimiliki mahasiswa tertentu
+// @Tags Student
+// @Accept json
+// @Produce json
+// @Param id path string true "Student ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /students/{id}/achievements [get]
+func GetStudentAchievements(c *fiber.Ctx) error {
 	ctx := context.Background()
+
+	studentRepo := repositories.NewStudentRepository(databases.PSQL)
+	refRepo := repositories.NewAchievementReferenceRepo(databases.PSQL)
+	mongoRepo := repositories.NewAchievementMongoRepository(databases.MongoDB)
+
+	studentID := c.Params("id")
+
+	student, err := studentRepo.FindByID(studentID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "student not found")
+	}
+
+	refs, err := refRepo.GetByStudentID(studentID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+
 	var results []fiber.Map
 
-	// 2️⃣ Ambil detail dari MongoDB
 	for _, ref := range refs {
-		mongoAch, err := s.mongoAchRepo.FindByID(ctx, ref.MongoAchievementID)
+		mongoAch, err := mongoRepo.FindByID(ctx, ref.MongoAchievementID)
 		if err != nil {
-			continue // skip kalau data mongo hilang
+			continue
 		}
 
 		results = append(results, fiber.Map{
-			"id":              ref.ID,
-			"status":          ref.Status,
-			"submitted_at":    ref.SubmittedAt,
-			"verified_at":     ref.VerifiedAt,
-			"verified_by":     ref.VerifiedBy,
-			"rejection_note":  ref.RejectionNote,
-
-			// Mongo data
-			"achievement": fiber.Map{
-				"id":               mongoAch.ID,
-				"achievement_type": mongoAch.AchievementType,
-				"title":            mongoAch.Title,
-				"description":      mongoAch.Description,
-				"details":          mongoAch.Details,
-				"attachments":      mongoAch.Attachments,
-				"tags":             mongoAch.Tags,
-				"points":           mongoAch.Points,
-				"created_at":       mongoAch.CreatedAt,
-			},
+			"id":             ref.ID,
+			"status":         ref.Status,
+			"submitted_at":   ref.SubmittedAt,
+			"verified_at":    ref.VerifiedAt,
+			"verified_by":    ref.VerifiedBy,
+			"rejection_note": ref.RejectionNote,
+			"achievement":   mongoAch,
 		})
 	}
 
 	return c.JSON(fiber.Map{
-		"data": results,
+		"student": student,
+		"data":    results,
 	})
 }
 
+// UpdateStudentAdvisor godoc
+// @Summary Update student's advisor
+// @Description Mengubah dosen pembimbing mahasiswa tertentu
+// @Tags Student
+// @Accept json
+// @Produce json
+// @Param id path string true "Student ID"
+// @Param body body map[string]string true "Advisor payload {\"advisor_id\": \"...\"}"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /students/{id}/advisor [put]
+func UpdateStudentAdvisor(c *fiber.Ctx) error {
+	studentRepo := repositories.NewStudentRepository(databases.PSQL)
 
-/* =========================
-   PUT /students/:id/advisor
-   Admin | Dosen
-========================= */
-func (s *StudentService) UpdateAdvisor(c *fiber.Ctx) error {
 	studentID := c.Params("id")
 
 	var payload struct {
@@ -150,12 +141,11 @@ func (s *StudentService) UpdateAdvisor(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "advisor_id is required")
 	}
 
-	_, err := s.studentRepo.FindByID(studentID)
-	if err != nil {
+	if _, err := studentRepo.FindByID(studentID); err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "student not found")
 	}
 
-	if err := s.studentRepo.UpdateAdvisor(studentID, payload.AdvisorID); err != nil {
+	if err := studentRepo.UpdateAdvisor(studentID, payload.AdvisorID); err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
 
@@ -164,46 +154,23 @@ func (s *StudentService) UpdateAdvisor(c *fiber.Ctx) error {
 	})
 }
 
-/* =========================
-   INTERNAL USE
-   (create student)
-========================= */
-func (s *StudentService) Create(student *models.Student) error {
+// CreateStudent godoc
+// @Summary Create new student
+// @Description Membuat mahasiswa baru
+// @Tags Student
+// @Accept json
+// @Produce json
+// @Param body body models.Student true "Student payload"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security ApiKeyAuth
+// @Router /students [post]
+func CreateStudent(student *models.Student) error {
 	if student.UserID == "" {
-		return errors.New("user_id is required")
-	}
-	return s.studentRepo.Create(student)
-}
-
-/* =========================
-   GET advisees (for lecturer)
-========================= */
-func (s *StudentService) GetByAdvisorID(c *fiber.Ctx) error {
-	advisorID := c.Params("id")
-
-	students, err := s.studentRepo.FindByAdvisorID(advisorID)
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		return fiber.NewError(fiber.StatusBadRequest, "user_id is required")
 	}
 
-	return c.JSON(fiber.Map{
-		"data": students,
-	})
-}
-
-/* =========================
-   GET student by user_id
-   (for profile / auth)
-========================= */
-func (s *StudentService) GetByUserID(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(string)
-
-	student, err := s.studentRepo.FindByUserID(userID)
-	if err != nil {
-		return fiber.NewError(fiber.StatusNotFound, "student not found")
-	}
-
-	return c.JSON(fiber.Map{
-		"data": student,
-	})
+	studentRepo := repositories.NewStudentRepository(databases.PSQL)
+	return studentRepo.Create(student)
 }
