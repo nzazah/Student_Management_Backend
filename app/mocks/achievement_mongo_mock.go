@@ -42,3 +42,14 @@ func (m *AchievementMongoMock) SoftDelete(ctx context.Context, id string) error 
 func (m *AchievementMongoMock) AddAttachment(ctx context.Context, id string, att models.AchievementAttachment) error {
 	return m.Called(ctx, id, att).Error(0)
 }
+
+func (m *AchievementMongoMock) FindByIDs(ctx context.Context, ids []string) ([]map[string]interface{}, error) {
+    args := m.Called(ctx, ids)
+    
+    var results []map[string]interface{}
+    if args.Get(0) != nil {
+        results = args.Get(0).([]map[string]interface{})
+    }
+    
+    return results, args.Error(1)
+}

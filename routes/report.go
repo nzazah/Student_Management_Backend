@@ -13,5 +13,5 @@ func registerReportRoutes(api fiber.Router, s *services.ReportService) {
     )
 
     reports.Get("/statistics", middleware.RequirePermission("report:view"), s.GetAchievementStatistics)
-    reports.Get("/student/:id", middleware.RequirePermission("report:view"), s.GetStudentReport)
+    reports.Get("/students/:id", middleware.RequirePermission("report:view"), s.GetStudentReport)
 }

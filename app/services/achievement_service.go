@@ -7,7 +7,7 @@ import (
 	"strings"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-
+	"fmt"
 	"uas/app/models"
 	"uas/app/repositories"
 )
@@ -53,11 +53,13 @@ func (s *AchievementService) CreateAchievement() fiber.Handler {
 
 		student, err := s.StudentRepo.FindByUserID(user.UserID)
 		if err != nil {
+			fmt.Println("Error StudentRepo:", err)
 			return c.Status(404).JSON(fiber.Map{"error": "student profile not found"})
 		}
 
 		var payload models.MongoAchievement
 		if err := c.BodyParser(&payload); err != nil {
+			fmt.Println("Error BodyParser:", err)
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
 
@@ -70,6 +72,7 @@ func (s *AchievementService) CreateAchievement() fiber.Handler {
 
 		mongoID, err := s.MongoRepo.Insert(context.Background(), &payload)
 		if err != nil {
+			fmt.Println("Error Mongo Insert:", err)
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 
@@ -332,29 +335,32 @@ func (s *AchievementService) SubmitAchievement() fiber.Handler {
 // @Security ApiKeyAuth
 // @Router /achievements/{id}/verify [post]
 func (s *AchievementService) VerifyAchievement() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+    return func(c *fiber.Ctx) error {
+        id := c.Params("id")
 
-		id := c.Params("id")
+        var payload struct {
+            Points int `json:"points"`
+        }
+        if err := c.BodyParser(&payload); err != nil {
+            return c.Status(400).JSON(fiber.Map{"error": "Invalid JSON format"})
+        }
 
-		var payload struct {
-			Points int `json:"points"`
-		}
-		if err := c.BodyParser(&payload); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-		}
+        user := c.Locals("user").(*models.JWTClaims)
 
-		user := c.Locals("user").(*models.JWTClaims)
+        if err := s.MongoRepo.UpdatePoints(context.Background(), id, payload.Points); err != nil {
+            return c.Status(500).JSON(fiber.Map{"error": "failed to update points: " + err.Error()})
+        }
 
-		if err := s.MongoRepo.UpdatePoints(context.Background(), id, payload.Points); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "failed to update points: " + err.Error()})
-		}
+        if err := s.RefRepo.VerifyByMongoID(id, user.UserID, time.Now()); err != nil {
+            return c.Status(500).JSON(fiber.Map{"error": "failed to verify: " + err.Error()})
+        }
 
-		if err := s.RefRepo.VerifyByMongoID(id, user.UserID, time.Now()); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "failed to verify achievement: " + err.Error()})
-		}
-
-		return c.JSON(fiber.Map{"status": "verified"})
-	}
+        return c.JSON(fiber.Map{
+            "status": "verified",
+            "id":     id,
+            "points": payload.Points,
+        })
+    }
 }
 
 // RejectAchievement godoc
@@ -382,7 +388,6 @@ func (s *AchievementService) RejectAchievement() fiber.Handler {
             return c.Status(400).JSON(fiber.Map{"error": err.Error()})
         }
 
-        // --- GANTI BARIS LAMA DENGAN KODE DI BAWAH INI ---
         if err := s.RefRepo.RejectByMongoID(id, payload.RejectionNote); err != nil {
             return c.Status(500).JSON(fiber.Map{"error": "failed to reject: " + err.Error()})
         }

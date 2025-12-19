@@ -46,16 +46,16 @@ type AchievementDetails struct {
 }
 
 type MongoAchievement struct {
-	ID              primitive.ObjectID     `bson:"_id,omitempty"`
-	StudentID       string                 `bson:"studentId"`
-	AchievementType string                 `bson:"achievementType"`
-	Title           string                 `bson:"title"`
-	Description     string                 `bson:"description"`
-	Details         AchievementDetails     `bson:"details"`
-	Attachments     []AchievementAttachment `bson:"attachments"`
-	Tags            []string               `bson:"tags"`
-	Points          int                    `bson:"points"`
-	CreatedAt       time.Time              `bson:"createdAt"`
-	UpdatedAt       time.Time              `bson:"updatedAt"`
-	DeletedAt       *time.Time             `bson:"deletedAt,omitempty"`
+    ID              primitive.ObjectID      `bson:"_id,omitempty" json:"id"`
+    StudentID       string                  `bson:"studentId" json:"studentId"`
+    AchievementType string                  `bson:"achievementType" json:"achievementType"`
+    Title           string                  `bson:"title" json:"title"`
+    Description     string                  `bson:"description" json:"description"`
+    Details         AchievementDetails      `bson:"details" json:"details"`
+    Attachments     []AchievementAttachment `bson:"attachments" json:"attachments"`
+    Tags            []string                `bson:"tags" json:"tags"`
+    Points          int                     `bson:"points" json:"points"`
+    CreatedAt       time.Time               `bson:"createdAt" json:"createdAt"`
+    UpdatedAt       time.Time               `bson:"updatedAt" json:"updatedAt"`
+    DeletedAt       *time.Time              `bson:"deletedAt,omitempty" json:"deletedAt,omitempty"`
 }

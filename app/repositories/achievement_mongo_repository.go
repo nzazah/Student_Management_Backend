@@ -3,7 +3,7 @@ package repositories
 import (
 	"context"
 	"time"
-
+	"fmt"
 	"uas/app/models"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -19,6 +19,7 @@ type IAchievementMongoRepository interface {
 	SoftDelete(ctx context.Context, id string) error
 	AddAttachment(ctx context.Context, id string, attachment models.AchievementAttachment) error
 	UpdatePoints(ctx context.Context, id string, points int) error
+	FindByIDs(ctx context.Context, ids []string) ([]map[string]interface{}, error)
 }
 
 type AchievementMongoRepository struct {
@@ -33,22 +34,19 @@ func NewAchievementMongoRepository(
 	}
 }
 
-func (r *AchievementMongoRepository) Insert(
-	ctx context.Context,
-	data *models.MongoAchievement,
-) (string, error) {
+func (r *AchievementMongoRepository) Insert(ctx context.Context, data *models.MongoAchievement) (string, error) {
+    data.CreatedAt = time.Now()
+    data.UpdatedAt = time.Now()
+    
+    data.ID = primitive.NilObjectID 
 
-	data.CreatedAt = time.Now()
-	data.UpdatedAt = time.Now()
-	data.DeletedAt = nil
+    res, err := r.collection.InsertOne(ctx, data)
+    if err != nil {
+        return "", err
+    }
 
-	res, err := r.collection.InsertOne(ctx, data)
-	if err != nil {
-		return "", err
-	}
-
-	oid := res.InsertedID.(primitive.ObjectID)
-	return oid.Hex(), nil
+    oid := res.InsertedID.(primitive.ObjectID)
+    return oid.Hex(), nil
 }
 
 func (r *AchievementMongoRepository) FindByID(ctx context.Context, id string) (*models.MongoAchievement, error) {
@@ -182,24 +180,48 @@ func (r *AchievementMongoRepository) AddAttachment(
 	return err
 }
 
-func (r *AchievementMongoRepository) UpdatePoints(
-	ctx context.Context,
-	id string,
-	points int,
-) error {
+func (r *AchievementMongoRepository) UpdatePoints(ctx context.Context, id string, points int) error {
+    oid, err := primitive.ObjectIDFromHex(id)
+    if err != nil {
+        return fmt.Errorf("invalid id format")
+    }
 
-	oid, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		return err
-	}
+    _, err = r.collection.UpdateOne(ctx,
+        bson.M{"_id": oid},
+        bson.M{"$set": bson.M{
+            "points":    points,
+            "updatedAt": time.Now(),
+        }},
+    )
+    return err
+}
 
-	_, err = r.collection.UpdateOne(ctx,
-		bson.M{"_id": oid},
-		bson.M{"$set": bson.M{
-			"points":    points,
-			"updatedAt": time.Now(),
-		}},
-	)
+func (r *AchievementMongoRepository) FindByIDs(ctx context.Context, ids []string) ([]map[string]interface{}, error) {
+    var filterIDs []interface{}
+    for _, id := range ids {
+        if oid, err := primitive.ObjectIDFromHex(id); err == nil {
+            filterIDs = append(filterIDs, oid)
+        }
+        filterIDs = append(filterIDs, id)
+    }
 
-	return err
+    filter := bson.M{
+        "_id": bson.M{"$in": filterIDs},
+        "$or": []bson.M{
+            {"deletedAt": nil},
+            {"deletedAt": bson.M{"$exists": false}},
+        },
+    }
+
+    cursor, err := r.collection.Find(ctx, filter)
+    if err != nil {
+        return nil, err
+    }
+    defer cursor.Close(ctx)
+
+    var results []map[string]interface{}
+    if err := cursor.All(ctx, &results); err != nil {
+        return nil, err
+    }
+    return results, nil
 }

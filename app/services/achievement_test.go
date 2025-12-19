@@ -84,4 +84,16 @@ func TestAchievementService(t *testing.T) {
 
         assert.Equal(t, 500, resp.StatusCode)
     })
+
+    t.Run("Get Report - Success", func(t *testing.T) {
+    ids := []string{"id1", "id2"}
+    mockData := []map[string]interface{}{
+        {"achievementType": "Lomba", "points": 100},
+        {"achievementType": "Sertifikasi", "points": 50},
+    }
+    
+    mongoMock.On("FindByIDs", mock.Anything, ids).Return(mockData, nil).Once()
+    
+})
 }
+
