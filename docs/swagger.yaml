@@ -124,23 +124,6 @@ definitions:
       updatedAt:
         type: string
     type: object
-  models.Student:
-    properties:
-      academicYear:
-        type: string
-      advisorID:
-        type: string
-      createdAt:
-        type: string
-      id:
-        type: string
-      programStudy:
-        type: string
-      studentID:
-        type: string
-      userID:
-        type: string
-    type: object
   models.StudentPayload:
     properties:
       academicYear:
@@ -802,43 +785,6 @@ paths:
       summary: Get all students
       tags:
       - Student
-    post:
-      consumes:
-      - application/json
-      description: Membuat mahasiswa baru
-      parameters:
-      - description: Student payload
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/models.Student'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - ApiKeyAuth: []
-      summary: Create new student
-      tags:
-      - Student
   /students/{id}:
     get:
       consumes:
@@ -1164,4 +1110,9 @@ paths:
       - User
 schemes:
 - http
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

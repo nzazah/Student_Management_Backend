@@ -25,65 +25,67 @@ import (
 // @Failure 403 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /auth/login [post]
-func Login(c *fiber.Ctx) error {
-	ctx := context.Background()
+func Login(userRepo repositories.IUserRepository, refreshRepo repositories.IRefreshRepository) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		ctx := context.Background()
 
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+		var req struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		}
+
+		user, err := userRepo.FindByUsername(ctx, req.Username)
+		if err != nil {
+			return c.Status(401).JSON(fiber.Map{"error": "user not found"})
+		}
+
+		if !user.IsActive {
+			return c.Status(403).JSON(fiber.Map{"error": "user inactive"})
+		}
+
+		if !utils.CheckPassword(req.Password, user.PasswordHash) {
+			return c.Status(401).JSON(fiber.Map{"error": "invalid password"})
+		}
+
+		roleName, _ := userRepo.GetRoleName(ctx, user.RoleID)
+
+		perms, err := userRepo.GetPermissionsByUserID(ctx, user.ID)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to load permissions"})
+		}
+
+		accessToken, err := utils.GenerateAccessTokenWithPermissions(*user, roleName, perms)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to generate access token"})
+		}
+
+		refreshToken, err := utils.GenerateRefreshToken(user.ID)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to generate refresh token"})
+		}
+
+		_ = refreshRepo.Delete(user.ID)
+		err = refreshRepo.Save(user.ID, refreshToken)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "failed to save refresh token"})
+		}
+
+		return c.JSON(fiber.Map{
+			"token":        accessToken,
+			"refreshToken": refreshToken,
+			"user": fiber.Map{
+				"id":          user.ID,
+				"username":    user.Username,
+				"fullName":    user.FullName,
+				"role":        roleName,
+				"permissions": perms,
+			},
+		})
 	}
-
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
-	}
-
-	userRepo := repositories.NewUserRepository(databases.PSQL)
-	refreshRepo := repositories.NewRefreshRepository(databases.PSQL)
-
-	user, err := userRepo.FindByUsername(ctx, req.Username)
-	if err != nil {
-		return c.Status(401).JSON(fiber.Map{"error": "user not found"})
-	}
-
-	if !user.IsActive {
-		return c.Status(403).JSON(fiber.Map{"error": "user inactive"})
-	}
-
-	if !utils.CheckPassword(req.Password, user.PasswordHash) {
-		return c.Status(401).JSON(fiber.Map{"error": "invalid password"})
-	}
-
-	roleName, _ := userRepo.GetRoleName(ctx, user.RoleID)
-
-	perms, err := userRepo.GetPermissionsByUserID(ctx, user.ID)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "failed to load permissions"})
-	}
-
-	accessToken, err := utils.GenerateAccessTokenWithPermissions(*user, roleName, perms)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "failed to generate access token"})
-	}
-
-	refreshToken, err := utils.GenerateRefreshToken(user.ID)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "failed to generate refresh token"})
-	}
-
-	_ = refreshRepo.Delete(user.ID)
-	_ = refreshRepo.Save(user.ID, refreshToken)
-
-	return c.JSON(fiber.Map{
-		"token":        accessToken,
-		"refreshToken": refreshToken,
-		"user": fiber.Map{
-			"id":          user.ID,
-			"username":    user.Username,
-			"fullName":    user.FullName,
-			"role":        roleName,
-			"permissions": perms,
-		},
-	})
 }
 
 // Refresh godoc

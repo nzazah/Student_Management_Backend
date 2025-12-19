@@ -370,21 +370,26 @@ func (s *AchievementService) VerifyAchievement() fiber.Handler {
 // @Security ApiKeyAuth
 // @Router /achievements/{id}/reject [post]
 func (s *AchievementService) RejectAchievement() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+    return func(c *fiber.Ctx) error {
 
-		id := c.Params("id")
+        id := c.Params("id")
 
-		var payload struct {
-			RejectionNote string `json:"rejection_note"`
-		}
+        var payload struct {
+            RejectionNote string `json:"rejection_note"`
+        }
 
-		if err := c.BodyParser(&payload); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-		}
+        if err := c.BodyParser(&payload); err != nil {
+            return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+        }
 
-		_ = s.RefRepo.RejectByMongoID(id, payload.RejectionNote)
-		return c.JSON(fiber.Map{"status": "rejected"})
-	}
+        // --- GANTI BARIS LAMA DENGAN KODE DI BAWAH INI ---
+        if err := s.RefRepo.RejectByMongoID(id, payload.RejectionNote); err != nil {
+            return c.Status(500).JSON(fiber.Map{"error": "failed to reject: " + err.Error()})
+        }
+        // ------------------------------------------------
+
+        return c.JSON(fiber.Map{"status": "rejected"})
+    }
 }
 
 // GetAchievementHistory godoc

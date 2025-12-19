@@ -73,63 +73,62 @@ func GetUserByID(c *fiber.Ctx) error {
 // @Failure 500 {object} map[string]string
 // @Security ApiKeyAuth
 // @Router /users [post]
-func CreateUser(c *fiber.Ctx) error {
-	ctx := context.Background()
+func CreateUser(userRepo repositories.IUserRepository, studentRepo repositories.IStudentRepository, lecturerRepo repositories.ILecturerRepository) fiber.Handler {
+    return func(c *fiber.Ctx) error {
+        ctx := context.Background()
 
-	var req models.CreateUserRequest
-	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(400, "invalid request")
-	}
+        var req models.CreateUserRequest
+        if err := c.BodyParser(&req); err != nil {
+            return fiber.NewError(400, "invalid request")
+        }
 
-	userRepo := repositories.NewUserRepository(databases.PSQL)
-	studentRepo := repositories.NewStudentRepository(databases.PSQL)
-	lecturerRepo := repositories.NewLecturerRepository(databases.PSQL)
+        hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 
-	hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+        user := &models.User{
+            ID:           uuid.NewString(),
+            Username:     req.Username,
+            Email:        req.Email,
+            PasswordHash: string(hash),
+            FullName:     req.FullName,
+            RoleID:       req.RoleID,
+            IsActive:     true,
+            CreatedAt:    time.Now(),
+            UpdatedAt:    time.Now(),
+        }
 
-	user := &models.User{
-		ID:           uuid.NewString(),
-		Username:     req.Username,
-		Email:        req.Email,
-		PasswordHash: string(hash),
-		FullName:     req.FullName,
-		RoleID:       req.RoleID,
-		IsActive:     true,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-	}
+        if err := userRepo.Create(ctx, user); err != nil {
+            return fiber.NewError(500, err.Error())
+        }
 
-	if err := userRepo.Create(ctx, user); err != nil {
-		return fiber.NewError(500, err.Error())
-	}
+        if req.Student != nil {
+            studentRepo.Create(&models.Student{
+                ID:           uuid.NewString(),
+                UserID:       user.ID,
+                StudentID:    req.Student.StudentID,
+                ProgramStudy: req.Student.ProgramStudy,
+                AcademicYear: req.Student.AcademicYear,
+                AdvisorID:    req.Student.AdvisorID,
+                CreatedAt:    time.Now(),
+            })
+        }
 
-	if req.Student != nil {
-		studentRepo.Create(&models.Student{
-			ID:           uuid.NewString(),
-			UserID:       user.ID,
-			StudentID:    req.Student.StudentID,
-			ProgramStudy: req.Student.ProgramStudy,
-			AcademicYear: req.Student.AcademicYear,
-			AdvisorID:    req.Student.AdvisorID,
-			CreatedAt:    time.Now(),
-		})
-	}
+        if req.Lecturer != nil {
+            lecturerRepo.Create(&models.Lecturer{
+                ID:         uuid.NewString(),
+                UserID:     user.ID,
+                LecturerID: req.Lecturer.LecturerID,
+                Department: req.Lecturer.Department,
+                CreatedAt:  time.Now(),
+            })
+        }
 
-	if req.Lecturer != nil {
-		lecturerRepo.Create(&models.Lecturer{
-			ID:         uuid.NewString(),
-			UserID:     user.ID,
-			LecturerID: req.Lecturer.LecturerID,
-			Department: req.Lecturer.Department,
-			CreatedAt:  time.Now(),
-		})
-	}
-
-	return c.Status(201).JSON(fiber.Map{
-		"message": "user created",
-		"user_id": user.ID,
-	})
+        return c.Status(201).JSON(fiber.Map{
+            "message": "user created",
+            "user_id": user.ID,
+        })
+    }
 }
+
 
 
 // UpdateUser godoc

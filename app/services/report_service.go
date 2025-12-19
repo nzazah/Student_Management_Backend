@@ -2,12 +2,22 @@ package services
 
 import (
 	"context"
+	"uas/app/repositories"
 
 	"github.com/gofiber/fiber/v2"
-
-	"uas/app/repositories"
-	"uas/databases"
 )
+
+type ReportService struct {
+    ReportRepo repositories.IReportRepository
+    MongoRepo  repositories.IAchievementMongoReportRepository 
+}
+
+func NewReportService(r repositories.IReportRepository, m repositories.IAchievementMongoReportRepository) *ReportService {
+    return &ReportService{
+        ReportRepo: r,
+        MongoRepo:  m,
+    }
+}
 
 // GetAchievementStatistics godoc
 // @Summary Get achievement statistics
@@ -19,19 +29,16 @@ import (
 // @Failure 500 {object} map[string]string
 // @Security ApiKeyAuth
 // @Router /reports/statistics [get]
-func GetAchievementStatistics(c *fiber.Ctx) error {
+func (s *ReportService) GetAchievementStatistics(c *fiber.Ctx) error {
 	ctx := context.Background()
 
-	reportRepo := repositories.NewReportRepository(databases.PSQL)
-	mongoRepo := repositories.NewAchievementMongoReportRepository(databases.MongoDB)
-
-	ids, err := reportRepo.GetVerifiedAchievementMongoIDs()
+	ids, err := s.ReportRepo.GetVerifiedAchievementMongoIDs()
 	if err != nil {
-		return fiber.NewError(500, err.Error())
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	totalPoints, _ := mongoRepo.SumPointsByIDs(ctx, ids)
-	byType, _ := mongoRepo.CountByType(ctx, ids)
+	totalPoints, _ := s.MongoRepo.SumPointsByIDs(ctx, ids)
+	byType, _ := s.MongoRepo.CountByType(ctx, ids)
 
 	avg := 0.0
 	if len(ids) > 0 {
@@ -41,7 +48,7 @@ func GetAchievementStatistics(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"total_verified_achievements": len(ids),
 		"total_points":                totalPoints,
-		"average_points":              avg,
+		"average_points":               avg,
 		"achievement_by_type":         byType,
 	})
 }
@@ -57,26 +64,34 @@ func GetAchievementStatistics(c *fiber.Ctx) error {
 // @Failure 500 {object} map[string]string
 // @Security ApiKeyAuth
 // @Router /reports/students/{id} [get]
-func GetStudentReport(c *fiber.Ctx) error {
+func (s *ReportService) GetStudentReport(c *fiber.Ctx) error {
 	ctx := context.Background()
 	studentID := c.Params("id")
 
-	reportRepo := repositories.NewReportRepository(databases.PSQL)
-	mongoRepo := repositories.NewAchievementMongoReportRepository(databases.MongoDB)
-
-	ids, err := reportRepo.GetVerifiedAchievementMongoIDsByStudent(studentID)
+	ids, err := s.ReportRepo.GetVerifiedAchievementMongoIDsByStudent(studentID)
 	if err != nil {
-		return fiber.NewError(500, err.Error())
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	achievements, _ := mongoRepo.FindByIDs(ctx, ids)
-	totalPoints, _ := mongoRepo.SumPointsByIDs(ctx, ids)
+	achievements, _ := s.MongoRepo.FindByIDs(ctx, ids)
+	totalPoints, _ := s.MongoRepo.SumPointsByIDs(ctx, ids)
 
 	pointsByType := make(map[string][]int)
 	for _, a := range achievements {
-		t := a["achievementType"].(string)
-		p := int(a["points"].(int32))
-		pointsByType[t] = append(pointsByType[t], p)
+		typeName, okT := a["achievementType"].(string)
+		
+		var pointsVal int
+		if p, ok := a["points"].(int32); ok {
+			pointsVal = int(p)
+		} else if p, ok := a["points"].(int64); ok {
+			pointsVal = int(p)
+		} else if p, ok := a["points"].(int); ok {
+			pointsVal = p
+		}
+
+		if okT {
+			pointsByType[typeName] = append(pointsByType[typeName], pointsVal)
+		}
 	}
 
 	avgByType := make(map[string]float64)

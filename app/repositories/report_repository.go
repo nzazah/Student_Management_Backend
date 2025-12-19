@@ -4,7 +4,7 @@ import (
 	"database/sql"
 )
 
-type ReportRepository interface {
+type IReportRepository interface {
 	GetVerifiedAchievementMongoIDs() ([]string, error)
 	GetVerifiedAchievementMongoIDsByStudent(studentID string) ([]string, error)
 }
@@ -13,7 +13,7 @@ type reportRepository struct {
 	db *sql.DB
 }
 
-func NewReportRepository(db *sql.DB) ReportRepository {
+func NewReportRepository(db *sql.DB) IReportRepository {
 	return &reportRepository{db: db}
 }
 

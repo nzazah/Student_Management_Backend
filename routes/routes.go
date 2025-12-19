@@ -3,8 +3,8 @@ package routes
 import (
 	"github.com/gofiber/fiber/v2"
 
-	"uas/app/services"
 	"uas/app/repositories"
+	"uas/app/services"
 	"uas/databases"
 )
 
@@ -14,24 +14,20 @@ func RegisterRoutes(app *fiber.App) {
 	registerAuthRoutes(api)
 
 	achievementService := services.NewAchievementService(
-		repositories.NewAchievementMongoRepository(
-			databases.MongoDB,
-		),
-		repositories.NewAchievementReferenceRepo(
-			databases.PSQL,
-		),
-		repositories.NewStudentRepository(
-			databases.PSQL,
-		),
-		repositories.NewLecturerRepository(
-			databases.PSQL,
-		),
+		repositories.NewAchievementMongoRepository(databases.MongoDB),
+		repositories.NewAchievementReferenceRepo(databases.PSQL),
+		repositories.NewStudentRepository(databases.PSQL),
+		repositories.NewLecturerRepository(databases.PSQL),
 	)
-
 	registerAchievementRoutes(api, achievementService)
 
-	registerUserRoutes(api)
+	reportRepo := repositories.NewReportRepository(databases.PSQL)
+	mongoReportRepo := repositories.NewAchievementMongoReportRepository(databases.MongoDB)
+	reportService := services.NewReportService(reportRepo, mongoReportRepo)
+
+	registerReportRoutes(api, reportService)
+
+	RegisterUserRoutes(api)
 	registerStudentRoutes(api)
 	registerLecturerRoutes(api)
-	registerReportRoutes(api)
 }

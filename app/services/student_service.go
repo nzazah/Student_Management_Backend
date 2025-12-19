@@ -4,8 +4,6 @@ import (
 	"context"
 
 	"github.com/gofiber/fiber/v2"
-
-	"uas/app/models"
 	"uas/app/repositories"
 	"uas/databases"
 )
@@ -152,25 +150,4 @@ func UpdateStudentAdvisor(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"message": "advisor updated successfully",
 	})
-}
-
-// CreateStudent godoc
-// @Summary Create new student
-// @Description Membuat mahasiswa baru
-// @Tags Student
-// @Accept json
-// @Produce json
-// @Param body body models.Student true "Student payload"
-// @Success 200 {object} map[string]string
-// @Failure 400 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Security ApiKeyAuth
-// @Router /students [post]
-func CreateStudent(student *models.Student) error {
-	if student.UserID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "user_id is required")
-	}
-
-	studentRepo := repositories.NewStudentRepository(databases.PSQL)
-	return studentRepo.Create(student)
 }

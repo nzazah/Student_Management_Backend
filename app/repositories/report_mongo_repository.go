@@ -7,7 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-type AchievementMongoReportRepository interface {
+type IAchievementMongoReportRepository interface {
 	SumPointsByIDs(ctx context.Context, ids []string) (int, error)
 	CountByType(ctx context.Context, ids []string) (map[string]int, error)
 	FindByIDs(ctx context.Context, ids []string) ([]bson.M, error)
@@ -17,7 +17,7 @@ type achievementMongoReportRepository struct {
 	collection *mongo.Collection
 }
 
-func NewAchievementMongoReportRepository(db *mongo.Database) AchievementMongoReportRepository {
+func NewAchievementMongoReportRepository(db *mongo.Database) IAchievementMongoReportRepository {
 	return &achievementMongoReportRepository{
 		collection: db.Collection("achievement_collections"),
 	}
